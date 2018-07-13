@@ -1,0 +1,32 @@
+Package: hivescaler
+Type: Package
+Title: Analyze time series of honey bee colony weight produced by BroodMinder system
+Version: 0.1.0
+Author: Doug Sponsler
+Maintainer: Doug Sponsler <sponslerdb@gmail.com>
+Description: A set of tools for handling BroodMinder databases in R, visualizing weight patterns, 
+  and performing cluster analysis to compare colony weight time series.
+License: GPL-3
+Encoding: UTF-8
+LazyData: true
+Imports: 
+  anytime,
+  hash,
+  oce,
+  xts,
+  timetk,
+  tsoutliers,
+  RSQLite,
+  harrietr,
+  dtwclust,
+  zoo
+Depends:
+  ggplot2,
+  stringr,
+  tidyr,
+  purrr,
+  forcats,
+  dplyr,
+  readr,
+  tibble
+RoxygenNote: 6.0.1
