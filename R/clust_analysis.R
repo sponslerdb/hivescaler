@@ -2,6 +2,7 @@
 #'
 #' @param x A tibble or data frame
 #' @return A data frame of row-wise time series
+#' @export
 clusterprep <- function(x) {
   data_in <- x %>%
     select(ScaleID, TimeStamp, weight = Weight_loess_diff_z) %>%
@@ -19,6 +20,7 @@ clusterprep <- function(x) {
 #'
 #' @param x An XTS time series object
 #' @return An XTS time series object with observations aligned to nearest hour
+#' @export
 xts_align <- function(x) {
   xts::align.time(x, 60*60)
 }
@@ -32,6 +34,7 @@ xts_align <- function(x) {
 #' @param trace See dtwclust::tso
 #' @param control See dtwclust::tso
 #' @return A cluster object, dendrogram, and cluster validation indices
+#' @export
 cluster_func <- function(x, type = "hierarchical", distance = "gak",
                          preproc = NULL, trace = TRUE, control = "ward.D2") {
   clust <- dtwclust::tsclust(x, type = type, distance = distance,
@@ -45,6 +48,7 @@ cluster_func <- function(x, type = "hierarchical", distance = "gak",
 #'
 #' @param x A dtwclust object containing the slot distmat
 #' @return A longform tibble with pairwise distances by site
+#' @export
 tab_dist <- function(x) {
   out <- melt_dist(x$distmat) %>%
     separate(iso1, c("siteA", "hiveA"), sep = -1, remove = TRUE) %>%
