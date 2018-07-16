@@ -41,3 +41,18 @@ cluster_func <- function(x, type = "hierarchical", distance = "gak",
   dtwclust::cvi(clust)
 }
 
+#' Convert distance matrix to long-form tibble in prep for downstream analysis
+#'
+#' @param x A dtwclust object containing the slot distmat
+#' @return A longform tibble with pairwise distances by site
+tab_dist <- function(x) {
+  out <- melt_dist(x$distmat) %>%
+    separate(iso1, c("siteA", "hiveA"), sep = -1, remove = TRUE) %>%
+    separate(iso2, c("siteB", "hiveB"), sep = -1, remove = TRUE) %>%
+    group_by(siteA, siteB) %>%
+    summarise(minGAK = min(dist), meanGAK = mean(dist)) %>%
+    filter(siteA != siteB)
+  return(out)
+}
+
+
