@@ -2,7 +2,10 @@
 % Please edit documentation in R/data_proc.R
 \name{data_proc}
 \alias{data_proc}
-\title{Apply 25 h running mean, loess smoothing, differencing, and scaling in preparation for downstream analysis}
+\title{\code{data_proc} generates and appends four new fields: a 25 h running mean of the despiekd weights,
+  a loess smoothing of the 25-h running mean,
+  a first-order difference vector of the loess-smoothed 25-h running mean,
+  and a z-normalization of the difference vector.}
 \usage{
 data_proc(x)
 }
@@ -13,5 +16,8 @@ data_proc(x)
 A tibble with added fields
 }
 \description{
-Apply 25 h running mean, loess smoothing, differencing, and scaling in preparation for downstream analysis
+\code{data_proc} generates and appends four new fields: a 25 h running mean of the despiekd weights,
+  a loess smoothing of the 25-h running mean,
+  a first-order difference vector of the loess-smoothed 25-h running mean,
+  and a z-normalization of the difference vector.
 }

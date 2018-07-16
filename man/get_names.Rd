@@ -2,16 +2,18 @@
 % Please edit documentation in R/data_proc.R
 \name{get_names}
 \alias{get_names}
-\title{Split HiveName field into Site and Hive#; assumes HiveName follows format site.#}
+\title{\code{get_names} splits HiveName field into Site and Hive#, assuming HiveName follows format site % sep % hive#}
 \usage{
-get_names(FilePath)
+get_names(FilePath, sep)
 }
 \arguments{
 \item{FilePath}{Path to BroodMinder SQLite database}
+
+\item{sep}{A string denoting the separator between the site and hive number in the HiveName field; assumes HiveName follows format site % sep % hive#}
 }
 \value{
 A tibble consisting of fields UUID, ScaleID, Site, Hive, filtered to contain only unique rows
 }
 \description{
-Split HiveName field into Site and Hive#; assumes HiveName follows format site.#
+\code{get_names} splits HiveName field into Site and Hive#, assuming HiveName follows format site % sep % hive#
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/data_proc.R
 \name{clean_spikes}
 \alias{clean_spikes}
-\title{Remove strong additive outliers, i.e. "spikes"}
+\title{\code{clean_spikes} removes strong additive outliers, i.e. "spikes", using the \code{despike} function from package \code{oce}. Parameters are set so that strong spike values are replaced with a running median of width = 7}
 \usage{
 clean_spikes(x)
 }
@@ -13,5 +13,5 @@ clean_spikes(x)
 An adjusted vector of observations in which spieks have been replaced with running median
 }
 \description{
-Remove strong additive outliers, i.e. "spikes"
+\code{clean_spikes} removes strong additive outliers, i.e. "spikes", using the \code{despike} function from package \code{oce}. Parameters are set so that strong spike values are replaced with a running median of width = 7
 }

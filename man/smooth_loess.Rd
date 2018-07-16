@@ -2,18 +2,18 @@
 % Please edit documentation in R/data_proc.R
 \name{smooth_loess}
 \alias{smooth_loess}
-\title{Apply loess smoothing to a time series}
+\title{\code{smooth_loess} applies loess smoothing to a time series}
 \usage{
 smooth_loess(x, span = 0.1)
 }
 \arguments{
 \item{x}{A vector of time-ordered observations}
 
-\item{span}{A real number indicating the width of the loess smoothing window}
+\item{span}{A real number indicating the width (proportion of time series observations) of the loess smoothing window}
 }
 \value{
 A loess-smoothed vector of time-ordered observations
 }
 \description{
-Apply loess smoothing to a time series
+\code{smooth_loess} applies loess smoothing to a time series
 }
