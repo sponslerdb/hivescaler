@@ -21,7 +21,9 @@ load_bm <- function(FilePath, tz, ftrim, btrim, sep = "\\.") {
     mutate(Weight_despiked = Reduce(c, tapply(Weight, ScaleID, clean_spikes))) %>% # call clean_spikes function (see below) to create Weight_despiked field
     filter(TimeStamp > ftrim & TimeStamp < btrim) %>% # trim data to desired start and end dates
     select(TimeStamp, Unix_Time, ScaleID, Site, Hive, Weight, Weight_despiked) %>%
-    mutate(Site = as.character(Site)) # convert Site field to character so that empty factor levels do not persist after filtering
+    mutate(Site = as.character(Site)) %>% # convert Site field to character so that empty factor levels do not persist after filtering
+    filter(Site != "kate") %>%
+    group_by(ScaleID)
   return(out)
 }
 
@@ -51,23 +53,6 @@ clean_spikes <- function(x) {
   oce::despike(x, reference = "median", n = 1.5, k = 7, replace = "reference")
 }
 
-#' \code{data_proc} generates and appends four new fields: a 25 h running mean of the despiekd weights,
-#'   a loess smoothing of the 25-h running mean,
-#'   a first-order difference vector of the loess-smoothed 25-h running mean,
-#'   and a z-normalization of the difference vector.
-#'
-#' @param x A tibble or data frame
-#' @return A tibble with added fields
-#' @export
-data_proc <- function(x) {
-  out <- x %>%
-    group_by(ScaleID) %>%
-    mutate(Weight_25h_mean = mean25h(Weight_adjusted)) %>%
-    mutate(Weight_loess = c(rep(NA, 12), smooth_loess(Weight_25h_mean), rep(NA, 12))) %>%
-    mutate(Weight_loess_diff = c(NA, diff(Weight_loess))) %>%
-    mutate(Weight_loess_diff_z = scale(Weight_loess_diff))
-  return(out)
-}
 
 #' \code{smooth_loess} applies loess smoothing to a time series
 #'
@@ -100,7 +85,10 @@ mean25h <- function(x) {
 #' @export
 fix_outliers <- function(x, ID, cval = 9, method = "arima") {
   set.seed(1404)
-  x_ID <-filter(x, ScaleID == ID)
+
+  ID <- enquo(ID)
+
+  x_ID <-filter(x, ScaleID == !!ID)
   x_ts <- as.ts(x_ID$Weight_despiked)
   x_tso <- tsoutliers::tso(x_ts, types = c("AO","LS"), cval = cval, tsmethod = method)
   x_ID$Weight_adjusted <- as.numeric(x_tso$yadj)
@@ -108,18 +96,11 @@ fix_outliers <- function(x, ID, cval = 9, method = "arima") {
   return(x_ID)
 }
 
-#' Use ARIMA modeling to identify and correct additive and level-shift outliers; batch process multiple hives
-#'
-#' @param x A data frame or tibble
-#' @param cval A real number, parameter of the tso function modulating sensitivity
-#' @param method A string specifying the modeling method to be used to identify outliers
-#' @return A tibble containing outlier-corrected vector of observations
-#' @export
-fix_outliers_batch <- function(x, cval = 9, method = "arima") {
-  set.seed(1404)
-  x_ts <- as.ts(x$Weight_despiked)
-  x_tso <- tsoutliers::tso(x_ts, types = c("AO","LS"), cval = cval, tsmethod = method)
-  x$Weight_adjusted <- as.numeric(x_tso$yadj)
-  plot(x_tso)
-  return(x)
+
+
+
+deartifact <- function(x, delta_max = 5) {
+  dw <- c(0, diff(x))
+  dm <- dw * (abs(dw) > delta_max)
+  return(x - cumsum(dm))
 }
