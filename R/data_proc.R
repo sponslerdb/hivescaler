@@ -18,12 +18,12 @@ load_bm <- function(FilePath, tz, ftrim, btrim, sep = "\\.") {
     filter(RecordType == "Logged_Data") %>% # use only logged data readings
     mutate(TimeStamp = anytime::anytime(Unix_Time, tz = tz)) %>% # convert Unix_Time to human-readable time stamp field
     arrange(ScaleID, TimeStamp) %>% # arrange chronologically within each device
-    mutate(Weight_despiked = Reduce(c, tapply(Weight, ScaleID, clean_spikes))) %>% # call clean_spikes function (see below) to create Weight_despiked field
     filter(TimeStamp > ftrim & TimeStamp < btrim) %>% # trim data to desired start and end dates
-    select(TimeStamp, Unix_Time, ScaleID, Site, Hive, Weight, Weight_despiked) %>%
+    select(TimeStamp, Unix_Time, ScaleID, Site, Hive, Weight) %>%
     mutate(Site = as.character(Site)) %>% # convert Site field to character so that empty factor levels do not persist after filtering
-    filter(Site != "kate") %>%
-    group_by(ScaleID)
+    group_by(ScaleID) %>%
+    mutate(Weight_clean = deartifact(Weight)) %>%
+    filter(Site != "kate")
   return(out)
 }
 
@@ -42,15 +42,6 @@ get_names <- function(FilePath, sep) {
     distinct() # deduplicate
   colnames(names) <- c("UUID", "ScaleID", "Site", "Hive") # rename columns
   return(names)
-}
-
-#' \code{clean_spikes} removes strong additive outliers, i.e. "spikes", using the \code{despike} function from package \code{oce}. Parameters are set so that strong spike values are replaced with a running median of width = 7
-#'
-#' @param x A vector of time-ordered observations
-#' @return An adjusted vector of observations in which spieks have been replaced with running median
-#' @export
-clean_spikes <- function(x) {
-  oce::despike(x, reference = "median", n = 1.5, k = 7, replace = "reference")
 }
 
 
@@ -74,29 +65,6 @@ smooth_loess <- function(x, span = 0.1) {
 mean25h <- function(x) {
   rollmean(x, 25, na.pad = T)
 }
-
-#' Use ARIMA modeling to identify and correct additive and level-shift outliers; one hive at a time
-#'
-#' @param x A data frame or tibble
-#' @param ID A string corresponding to the ScaleID field, specifying which hive is to be processed
-#' @param cval A real number, parameter of the tso function modulating sensitivity
-#' @param method A string specifying the modeling method to be used to identify outliers
-#' @return A tibble containing outlier-corrected vector of observations
-#' @export
-fix_outliers <- function(x, ID, cval = 9, method = "arima") {
-  set.seed(1404)
-
-  ID <- enquo(ID)
-
-  x_ID <-filter(x, ScaleID == !!ID)
-  x_ts <- as.ts(x_ID$Weight_despiked)
-  x_tso <- tsoutliers::tso(x_ts, types = c("AO","LS"), cval = cval, tsmethod = method)
-  x_ID$Weight_adjusted <- as.numeric(x_tso$yadj)
-  plot(x_tso)
-  return(x_ID)
-}
-
-
 
 
 deartifact <- function(x, delta_max = 5) {
