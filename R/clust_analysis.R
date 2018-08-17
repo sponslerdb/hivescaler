@@ -4,16 +4,20 @@
 #' @return A data frame of row-wise time series
 #' @export
 clusterprep <- function(x) {
-  data_in <- x %>%
-    select(ScaleID, TimeStamp, weight = Weight_loess_diff_z) %>%
+  out <- x %>%
+    filter(weight_var == "Weight_decycled_diff") %>%
+    filter(ScaleID != "westphilly.3" & ScaleID != "rodeph.3") %>%
+    na.omit() %>%
+    select(ScaleID, TimeStamp, weight = value) %>%
     group_by(ScaleID) %>%
     nest() %>%
     mutate(data_xts = map(data, timetk::tk_xts)) %>% # Convert each item in list column to xts time series object
     mutate(aligned_xts = map(data_xts, xts_align)) %>% # Align to nearest hour; this enables merge step below
     select(ScaleID, aligned_xts)
-  out <- do.call(merge, data_in$aligned_xts) %>% na.omit() # Merge time series back into single xts object
-  colnames(out) <- data_in$ScaleID
-  return(t(out))
+
+  names(out$aligned_xts) <- out$ScaleID
+
+  return(out)
 }
 
 #' Align time series to nearest hour
@@ -36,11 +40,13 @@ xts_align <- function(x) {
 #' @return A cluster object, dendrogram, and cluster validation indices
 #' @export
 cluster_func <- function(x, type = "hierarchical", distance = "gak",
-                         preproc = NULL, trace = TRUE, control = "ward.D2") {
-  clust <- dtwclust::tsclust(x, type = type, distance = distance,
-                             preproc = preproc, seed = 1, trace = trace,
+                        trace = TRUE, control = "ward.D2") {
+
+  clust <- dtwclust::tsclust(x$aligned_xts, type = type, distance = distance,
+                             preproc = zscore, seed = 1, trace = trace,
                              control = hierarchical_control(method = control))
-  dtwclust::plot(clust) # Plot SBD dendrogram
+
+  dtwclust::plot(clust) # Plot dendrogram
   dtwclust::cvi(clust)
 }
 

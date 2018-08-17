@@ -21,8 +21,6 @@ load_bm <- function(FilePath, tz, ftrim, btrim, sep = "\\.") {
     filter(TimeStamp > ftrim & TimeStamp < btrim) %>% # trim data to desired start and end dates
     select(TimeStamp, Unix_Time, ScaleID, Site, Hive, Weight) %>%
     mutate(Site = as.character(Site)) %>% # convert Site field to character so that empty factor levels do not persist after filtering
-    group_by(ScaleID) %>%
-    mutate(Weight_clean = deartifact(Weight)) %>%
     filter(Site != "kate")
   return(out)
 }
@@ -44,19 +42,6 @@ get_names <- function(FilePath, sep) {
   return(names)
 }
 
-
-#' \code{smooth_loess} applies loess smoothing to a time series
-#'
-#' @param x A vector of time-ordered observations
-#' @param span A real number indicating the width (proportion of time series observations) of the loess smoothing window
-#' @return A loess-smoothed vector of time-ordered observations
-#' @export
-smooth_loess <- function(x, span = 0.1) {
-  mod <- loess(x ~ zoo::index(x), span = span)
-  out <- predict(mod)
-  return(out)
-}
-
 #' Remove daily periodicity by honey bee weight data by taking a 25-h running mean
 #'
 #' @param x A vector of time-ordered observations
@@ -66,9 +51,27 @@ mean25h <- function(x) {
   rollmean(x, 25, na.pad = T)
 }
 
-
-deartifact <- function(x, delta_max = 5) {
+#' Correct artifacts by subtacting from each observation the cumulative sum of observations > delta_max.
+#' Empirically, histograms of my differenced show a consistent discontinuity around 2.5, suggesting that this is an appropriate value for delta_max.
+#'
+#' @param x A vector of time-ordered observations
+#' @param delta_max A real number defining the weight chenge threshold above which a weight change is considered an artifact.
+#' @return A vector of de-artifacted observations
+#' @export
+deartifact <- function(x, delta_max = 2.5) {
   dw <- c(0, diff(x))
   dm <- dw * (abs(dw) > delta_max)
   return(x - cumsum(dm))
+}
+
+
+data_proc <- function(x) {
+  x %>%
+    select(-Unix_Time) %>%
+    group_by(ScaleID) %>%
+    mutate(Weight_clean = deartifact(Weight),
+           Weight_decycled = mean25h(Weight_clean),
+           Weight_decycled_diff = c(0, diff(Weight_decycled))) %>%
+    gather(weight_var, value, -TimeStamp, -ScaleID, -Site, -Hive)
+           #Weight_mean25 = mean25h(Weight_clean))
 }
