@@ -1,12 +1,13 @@
 #' Convert data to aligned XTS object and transpose
 #'
 #' @param x A tibble or data frame
+#' @param omit A vector of strings indicating ScaleIDs to be dropped
 #' @return A data frame of row-wise time series
 #' @export
-clusterprep <- function(x) {
+clusterprep <- function(x, omit) {
   out <- x %>%
     filter(weight_var == "Weight_decycled_diff") %>%
-    filter(ScaleID != "westphilly.3" & ScaleID != "rodeph.3") %>%
+    filter(!ScaleID %in% omit) %>%
     na.omit() %>%
     select(ScaleID, TimeStamp, weight = value) %>%
     group_by(ScaleID) %>%
