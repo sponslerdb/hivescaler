@@ -51,7 +51,7 @@ mean25h <- function(x) {
   rollmean(x, 25, na.pad = T)
 }
 
-#' Correct artifacts by subtacting from each observation the cumulative sum of observations > delta_max.
+#' \code{deartifacr} corrects artifacts by subtacting from each observation the cumulative sum of observations > delta_max.
 #' Empirically, histograms of my differenced show a consistent discontinuity around 2.5, suggesting that this is an appropriate value for delta_max.
 #'
 #' @param x A vector of time-ordered observations
@@ -64,7 +64,7 @@ deartifact <- function(x, delta_max = 2.5) {
   return(x - cumsum(dm))
 }
 
-
+#' \code{data_proc} adds Weight_clean, Weight_decycled, and Weight_decycled_diff fields; also gathers into tidy array
 data_proc <- function(x) {
   x %>%
     select(-Unix_Time) %>%
@@ -73,5 +73,12 @@ data_proc <- function(x) {
            Weight_decycled = mean25h(Weight_clean),
            Weight_decycled_diff = c(0, diff(Weight_decycled))) %>%
     gather(weight_var, value, -TimeStamp, -ScaleID, -Site, -Hive)
-           #Weight_mean25 = mean25h(Weight_clean))
+}
+
+plot_wt <- function(x, weight_vars = c("Weight", "Weight_clean", "Weight_decycled"), omit = NULL) {
+  x <- filter(x, weight_var %in% c(weight_vars) & !ScaleID %in% omit)
+  ggplot(x, aes(x = TimeStamp, y = value, color = weight_var)) +
+    geom_line() +
+    facet_wrap(~ ScaleID) +
+    coord_cartesian(ylim = c(0, 120))
 }

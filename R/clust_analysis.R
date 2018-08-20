@@ -48,7 +48,8 @@ cluster_func <- function(x, type = "hierarchical", distance = "gak",
                              control = hierarchical_control(method = control))
 
   dtwclust::plot(clust) # Plot dendrogram
-  dtwclust::cvi(clust)
+
+  return(clust)
 }
 
 #' Convert distance matrix to long-form tibble in prep for downstream analysis
@@ -57,13 +58,32 @@ cluster_func <- function(x, type = "hierarchical", distance = "gak",
 #' @return A longform tibble with pairwise distances by site
 #' @export
 tab_dist <- function(x) {
-  out <- melt_dist(x$distmat) %>%
-    separate(iso1, c("siteA", "hiveA"), sep = -1, remove = TRUE) %>%
-    separate(iso2, c("siteB", "hiveB"), sep = -1, remove = TRUE) %>%
-    group_by(siteA, siteB) %>%
-    summarise(minGAK = min(dist), meanGAK = mean(dist)) %>%
-    filter(siteA != siteB)
+  out <- melt_dist(x@distmat) %>%
+    separate(iso1, c("siteA", "hiveA"), sep = "\\.", remove = FALSE) %>%
+    separate(iso2, c("siteB", "hiveB"), sep = "\\.", remove = FALSE) %>%
+    mutate(in_out = map2_chr(siteA, siteB, inout))
+    #group_by(siteA, siteB) %>%
+    #summarise(minGAK = min(dist), meanGAK = mean(dist), maxGAK = max(dist)) #%>%
+    #filter(siteA != siteB)
   return(out)
 }
+
+#' \code{inout} creates a new field in the tabulated distance matrix specifiying whether each pairwise comparison is of hives within a site or hives ar different sites
+#'
+#' @param x,y Columns in tabulated distance matrix representing each of the two hives in each pairwise comparison
+inout <- function(x, y) {
+  ifelse(x == y, "in", "out")
+}
+
+
+#' \code{site_effect} draws boxplots and runs t.test to compare pairwise distance withing and across sites
+#'
+#' @param x a tabulated distance matrix
+site_effect <- function(x) {
+  boxplot(x$dist ~ x$in_out)
+  t.test(x$dist ~ x$in_out)
+}
+
+
 
 
