@@ -13,7 +13,7 @@ load_bm <- function(FilePath, tz, ftrim, btrim, sep = "\\.") {
   RSQLite::dbDisconnect(data_sqlite) # closes connection
   hnames <- get_names(FilePath, sep) # call get_names function (see below) to prepare site and hive# fields to be appended to data tibble
   out <- full_join(dat, hnames, by = "UUID") %>%
-    select(Unix_Time, Site, Hive, ScaleID, RecordType, Weight) %>%
+    select(Unix_Time, Site, Hive, ScaleID, RecordType, Weight) %>% # "Weight" is the raw, unscaled sum of left and right load cells
     as.tibble() %>%
     filter(RecordType == "Logged_Data") %>% # use only logged data readings
     mutate(TimeStamp = anytime::anytime(Unix_Time, tz = tz)) %>% # convert Unix_Time to human-readable time stamp field
@@ -58,27 +58,30 @@ mean25h <- function(x) {
 #' @param delta_max A real number defining the weight chenge threshold above which a weight change is considered an artifact.
 #' @return A vector of de-artifacted observations
 #' @export
+# deartifact <- function(x, delta_max = 4) {
+#   dw <- c(0, diff(x))
+#   dm <- dw * (abs(dw) > delta_max)
+#   return(x - cumsum(dm))
+# }
 deartifact <- function(x, delta_max = 2.5) {
-  dw <- c(0, diff(x))
-  dm <- dw * (abs(dw) > delta_max)
-  return(x - cumsum(dm))
+  for(i in seq_along(x)) {
+    if(abs(x[i]) > delta_max) {
+      x[i] <- 0
+    }
+  }
+  return(x)
 }
+
 
 #' \code{data_proc} adds Weight_clean, Weight_decycled, and Weight_decycled_diff fields; also gathers into tidy array
 data_proc <- function(x) {
   x %>%
     select(-Unix_Time) %>%
     group_by(ScaleID) %>%
-    mutate(Weight_clean = deartifact(Weight),
-           Weight_decycled = mean25h(Weight_clean),
-           Weight_decycled_diff = c(0, diff(Weight_decycled))) %>%
+    mutate(wt_diff = c(0, diff(Weight)),
+           wt_diff_clean = deartifact(wt_diff),
+           wt_diff_clean_25h = mean25h(wt_diff_clean)) %>%
+    na.omit() %>%
+    mutate(wt_recon = cumsum(wt_diff_clean_25h)) %>%
     gather(weight_var, value, -TimeStamp, -ScaleID, -Site, -Hive)
-}
-
-plot_wt <- function(x, weight_vars = c("Weight", "Weight_clean", "Weight_decycled"), omit = NULL) {
-  x <- filter(x, weight_var %in% c(weight_vars) & !ScaleID %in% omit)
-  ggplot(x, aes(x = TimeStamp, y = value, color = weight_var)) +
-    geom_line() +
-    facet_wrap(~ ScaleID) +
-    coord_cartesian(ylim = c(0, 120))
 }
