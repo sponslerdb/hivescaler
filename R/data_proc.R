@@ -54,7 +54,7 @@ mean25h <- function(x) {
 #' \code{deartifacr} corrects artifacts by subtacting from each observation the cumulative sum of observations > delta_max.
 #' Empirically, histograms of my differenced show a consistent discontinuity around 2.5, suggesting that this is an appropriate value for delta_max.
 #'
-#' @param x A vector of time-ordered observations
+#' @param x A vector of differenced time-ordered observations
 #' @param delta_max A real number defining the weight chenge threshold above which a weight change is considered an artifact.
 #' @return A vector of de-artifacted observations
 #' @export
@@ -73,7 +73,10 @@ deartifact <- function(x, delta_max = 2.5) {
 }
 
 
+
 #' \code{data_proc} adds Weight_clean, Weight_decycled, and Weight_decycled_diff fields; also gathers into tidy array
+#'
+#'
 data_proc <- function(x) {
   x %>%
     select(-Unix_Time) %>%
@@ -82,6 +85,96 @@ data_proc <- function(x) {
            wt_diff_clean = deartifact(wt_diff),
            wt_diff_clean_25h = mean25h(wt_diff_clean)) %>%
     na.omit() %>%
-    mutate(wt_recon = cumsum(wt_diff_clean_25h)) %>%
-    gather(weight_var, value, -TimeStamp, -ScaleID, -Site, -Hive)
+    mutate(wt_recon = cumsum(wt_diff_clean_25h),
+           TimeStamp_round = lubridate::round_date(TimeStamp, unit = "hour"),
+           delta_sign = if_else(wt_diff_clean_25h >= 0, "gain", "loss")) %>%
+    select(TimeStamp_round, ScaleID, Site, Hive, Weight, wt_diff, wt_diff_clean, wt_diff_clean_25h, wt_recon, delta_sign) %>%
+    gather(weight_var, value, -TimeStamp_round, -ScaleID, -Site, -Hive, -delta_sign)
+}
+
+
+#' \code{plot_wt} is a wrapper for ggplot that allows the plotting of weight metrics by hive, by site, or pooled
+#'
+#' @param x a tibble output by data_proc
+#' @param by a string specifying whether plot should be faceted by "site", "scale", or "none"
+#' @param metric a string vector indicating which weight metrics should be plotted
+#' @return a plot
+plot_wt <- function(x, by = "site", metric) {
+  x <- filter(x, weight_var %in% metric)
+
+  if(by == "hive") {
+    p <- ggplot(x, aes(x$TimeStamp_round, x$value)) +
+      geom_point() +
+      facet_wrap(~ ScaleID)
+  }
+
+  if(by == "site") {
+    p <- ggplot(x, aes(TimeStamp_round, value, color = Hive)) +
+      geom_point() +
+      facet_wrap(~ Site)
+  }
+
+  if(by == "none") {
+    p <- ggplot(x, aes(x$TimeStamp_round, x$value)) +
+      geom_point(alpha = 0.025) +
+      stat_smooth()
+  }
+
+  print(p)
+}
+
+
+plot_delta <- function(x, type = "points", by = "none", metric) {
+  x <- filter(x, weight_var %in% metric)
+
+  if(by == "hive") {
+    if(type == "points") {
+      p <- ggplot(x, aes(TimeStamp_round, value)) +
+        geom_point(alpha = 0.1, aes(color = delta_sign)) +
+        stat_smooth(method = "gam", formula = y ~ s(x, bs = "cs", k = 25), geom = "area", alpha = 0.75) +
+        geom_hline(yintercept = 0, color = "yellow") +
+        coord_cartesian(ylim = c(-0.15, 0.15)) +
+        facet_wrap(~ScaleID)
+    }
+    if(type == "hist") {
+      p <- ggplot(x, aes(value)) +
+        geom_histogram(binwidth = 0.05) +
+        xlim(-5, 5) +
+        facet_wrap(~ScaleID)
+    }
+  }
+
+    if(by == "site") {
+      if(type == "points") {
+        p <- ggplot(x, aes(TimeStamp_round, value)) +
+          geom_point(alpha = 0.1, aes(color = delta_sign)) +
+          stat_smooth(method = "gam", formula = y ~ s(x, bs = "cs", k = 25), geom = "area", alpha = 0.75) +
+          geom_hline(yintercept = 0, color = "yellow") +
+          coord_cartesian(ylim = c(-0.15, 0.15)) +
+          facet_wrap(~Site)
+      }
+      if(type == "hist") {
+        p <- ggplot(x, aes(value)) +
+          geom_histogram(binwidth = 0.05) +
+          xlim(-5, 5) +
+          facet_wrap(~Site)
+      }
+    }
+
+      if(by == "none") {
+        if(type == "points") {
+          p <- ggplot(x, aes(TimeStamp_round, value)) +
+            geom_point(alpha = 0.1, aes(color = delta_sign)) +
+            stat_smooth(method = "gam", formula = y ~ s(x, bs = "cs", k = 25), geom = "area", alpha = 0.75) +
+            geom_hline(yintercept = 0, color = "yellow") +
+            coord_cartesian(ylim = c(-0.15, 0.15))
+        }
+        if(type == "hist") {
+          p <- ggplot(x, aes(value)) +
+            geom_histogram(binwidth = 0.05) +
+            xlim(-5, 5)
+        }
+  }
+
+  print(p)
 }
