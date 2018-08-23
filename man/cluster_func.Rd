@@ -4,7 +4,7 @@
 \alias{cluster_func}
 \title{Cluster time series, plot dendrogram, print cluster validation indices}
 \usage{
-cluster_func(x, type = "hierarchical", distance = "gak", preproc = NULL,
+cluster_func(x, type = "hierarchical", distance = "gak",
   trace = TRUE, control = "ward.D2")
 }
 \arguments{
@@ -14,11 +14,11 @@ cluster_func(x, type = "hierarchical", distance = "gak", preproc = NULL,
 
 \item{distance}{See dtwclust::tso}
 
-\item{preproc}{See dtwclust::tso}
-
 \item{trace}{See dtwclust::tso}
 
 \item{control}{See dtwclust::tso}
+
+\item{preproc}{See dtwclust::tso}
 }
 \value{
 A cluster object, dendrogram, and cluster validation indices

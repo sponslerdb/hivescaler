@@ -1,4 +1,4 @@
-#' \code{load_bm} loads a BroodMinder SQLite database and extracts logged readings into a tibble.
+#' \code{data_load} loads a BroodMinder SQLite database and extracts logged readings into a tibble.
 #'
 #' @param FilePath Path to BroodMinder SQLite database
 #' @param tz String identifying time zone
@@ -7,7 +7,7 @@
 #' @param sep A string denoting the separator between the site and hive number in the HiveName field; assumes HiveName follows format site % sep % hive#
 #' @return A tibble containing selected fields and trimmed to front and back cutoff dates
 #' @export
-load_bm <- function(FilePath, tz, ftrim, btrim, sep = "\\.") {
+data_load <- function(FilePath, tz, ftrim, btrim, sep = "\\.") {
   data_sqlite <- RSQLite::dbConnect(RSQLite::SQLite(), FilePath) # opens db connection
   dat <- RSQLite::dbGetQuery(data_sqlite, "SELECT * FROM BroodMinderLogReading") # extracts BroodMinderLogReading sheet
   RSQLite::dbDisconnect(data_sqlite) # closes connection
@@ -42,7 +42,7 @@ get_names <- function(FilePath, sep) {
   return(names)
 }
 
-#' Remove daily periodicity by honey bee weight data by taking a 25-h running mean
+#' \code{mean25h} removes daily periodicity by honey bee weight data by taking a 25-h rolling mean
 #'
 #' @param x A vector of time-ordered observations
 #' @return A vector of 25-h means with NA pad for first 12 and last 12 observations
@@ -51,6 +51,7 @@ mean25h <- function(x) {
   rollmean(x, 25, na.pad = T)
 }
 
+
 #' \code{deartifacr} corrects artifacts by subtacting from each observation the cumulative sum of observations > delta_max.
 #' Empirically, histograms of my differenced show a consistent discontinuity around 2.5, suggesting that this is an appropriate value for delta_max.
 #'
@@ -58,11 +59,6 @@ mean25h <- function(x) {
 #' @param delta_max A real number defining the weight chenge threshold above which a weight change is considered an artifact.
 #' @return A vector of de-artifacted observations
 #' @export
-# deartifact <- function(x, delta_max = 4) {
-#   dw <- c(0, diff(x))
-#   dm <- dw * (abs(dw) > delta_max)
-#   return(x - cumsum(dm))
-# }
 deartifact <- function(x, delta_max = 2.5) {
   for(i in seq_along(x)) {
     if(abs(x[i]) > delta_max) {
@@ -73,10 +69,11 @@ deartifact <- function(x, delta_max = 2.5) {
 }
 
 
-
-#' \code{data_proc} adds Weight_clean, Weight_decycled, and Weight_decycled_diff fields; also gathers into tidy array
+#' \code{data_proc} creates wt_diff (differenced weight), wt_diff_clean (deartifacted differenced weight), wt_diff_clean_25h (25-h rolling mean), wt_recon (absolute weight reconstructed by taking the cumulative sum of the deartifacted differenced weight, normalized to zero starting weight), delta_sign (indicating whether each weight change was positive or negative), and TimeStamp_round (TimeStamp field rounded to nearest hour to enable time series alignment)
 #'
-#'
+#' @param x a tibble created by data_load
+#' @return a tibble with new fields, gathered into a tudy array
+#' @export
 data_proc <- function(x) {
   x %>%
     select(-Unix_Time) %>%
@@ -98,49 +95,78 @@ data_proc <- function(x) {
 #' @param x a tibble output by data_proc
 #' @param by a string specifying whether plot should be faceted by "site", "scale", or "none"
 #' @param metric a string vector indicating which weight metrics should be plotted
+#' @param omit a string indicating which ScaleIDs shoud be dropped prior to plotting
+#' @param knots a real number controlling the number of knots in the GAM splines smoothing function; lower number = more smoothing
 #' @return a plot
-plot_wt <- function(x, by = "site", metric) {
-  x <- filter(x, weight_var %in% metric)
+plot_wt <- function(x, by = "site", metric, knots = 25, omit = NULL) {
+  x <- filter(x, weight_var %in% metric & !ScaleID %in% omit)
 
   if(by == "hive") {
     p <- ggplot(x, aes(x$TimeStamp_round, x$value)) +
       geom_point() +
-      facet_wrap(~ ScaleID)
+      xlab("Time") +
+      ylab("Weight (kg, zero-based)") +
+      facet_wrap(~ ScaleID) +
+      theme_gray(18)
   }
 
   if(by == "site") {
     p <- ggplot(x, aes(TimeStamp_round, value, color = Hive)) +
       geom_point() +
-      facet_wrap(~ Site)
+      xlab("Time") +
+      ylab("Weight (kg, zero-based)") +
+      facet_wrap(~ Site) +
+      theme_gray(18)
   }
 
   if(by == "none") {
     p <- ggplot(x, aes(x$TimeStamp_round, x$value)) +
-      geom_point(alpha = 0.025) +
-      stat_smooth()
+      geom_point(alpha = 0.05) +
+      xlab("Time") +
+      ylab("Weight (kg, zero-based)") +
+      stat_smooth(method = "gam",
+                  formula = y ~ s(x, bs = "cs", k = knots),
+                  aes(color = "GAM fit"),
+                  se = FALSE,
+                  size = 2) +
+      scale_color_manual(name='GAM fit', values=c("blue")) +
+      theme_gray(18) +
+      theme(legend.title=element_blank())
   }
 
   print(p)
 }
 
-
-plot_delta <- function(x, type = "points", by = "none", metric) {
-  x <- filter(x, weight_var %in% metric)
+#' \code{plot_delta} is a wrapper for ggplot that allows the plotting of differenced weight metrics by hive, by site, or pooled
+#'
+#' @param x a tibble output by data_proc
+#' @param type a string specifying the type of plot; options are "points" for scatterplot or "hist" for histogram; note that for histograms, xlim is set to c(-5, 5), which results in the trimming of extreme values but improves visualization of data. Similarly, for scatterplots, ylim is set to (-0.15, 0.15), which trims extreme values but improves visualization of the smooth fit line
+#' @param by a string specifying whether plot should be faceted by "site", "scale", or "none"
+#' @param metric a string vector indicating which weight metrics should be plotted
+#' @param omit a string indicating which ScaleIDs shoud be dropped prior to plotting
+#' @param knots a real number controlling the number of knots in the GAM splines smoothing function; lower number = more smoothing
+#' @return a plot
+plot_delta <- function(x, type = "points", by = "none", metric, knots = 25, omit = NULL) {
+  x <- filter(x, weight_var %in% metric & !ScaleID %in% omit)
 
   if(by == "hive") {
     if(type == "points") {
       p <- ggplot(x, aes(TimeStamp_round, value)) +
         geom_point(alpha = 0.1, aes(color = delta_sign)) +
-        stat_smooth(method = "gam", formula = y ~ s(x, bs = "cs", k = 25), geom = "area", alpha = 0.75) +
-        geom_hline(yintercept = 0, color = "yellow") +
-        coord_cartesian(ylim = c(-0.15, 0.15)) +
-        facet_wrap(~ScaleID)
+        stat_smooth(method = "gam", formula = y ~ s(x, bs = "cs", k = knots), geom = "area", alpha = 0.8) +
+        coord_cartesian(ylim = c(-0.2, 0.2)) +
+        xlab("Time") +
+        ylab("Δ Weight (kg)") +
+        facet_wrap(~ScaleID) +
+        theme_gray() +
+        theme(legend.title=element_blank())
     }
     if(type == "hist") {
       p <- ggplot(x, aes(value)) +
         geom_histogram(binwidth = 0.05) +
         xlim(-5, 5) +
-        facet_wrap(~ScaleID)
+        facet_wrap(~ScaleID) +
+        theme_gray(18)
     }
   }
 
@@ -148,31 +174,40 @@ plot_delta <- function(x, type = "points", by = "none", metric) {
       if(type == "points") {
         p <- ggplot(x, aes(TimeStamp_round, value)) +
           geom_point(alpha = 0.1, aes(color = delta_sign)) +
-          stat_smooth(method = "gam", formula = y ~ s(x, bs = "cs", k = 25), geom = "area", alpha = 0.75) +
-          geom_hline(yintercept = 0, color = "yellow") +
-          coord_cartesian(ylim = c(-0.15, 0.15)) +
-          facet_wrap(~Site)
+          stat_smooth(method = "gam", formula = y ~ s(x, bs = "cs", k = knots), geom = "area", alpha = 0.8) +
+          coord_cartesian(ylim = c(-0.2, 0.2)) +
+          xlab("Time") +
+          ylab("Δ Weight (kg)") +
+          facet_wrap(~Site) +
+          theme_gray(18) +
+          theme(legend.title=element_blank())
       }
       if(type == "hist") {
         p <- ggplot(x, aes(value)) +
           geom_histogram(binwidth = 0.05) +
           xlim(-5, 5) +
-          facet_wrap(~Site)
+          facet_wrap(~Site) +
+          theme_gray(18)
       }
     }
 
       if(by == "none") {
         if(type == "points") {
           p <- ggplot(x, aes(TimeStamp_round, value)) +
-            geom_point(alpha = 0.1, aes(color = delta_sign)) +
-            stat_smooth(method = "gam", formula = y ~ s(x, bs = "cs", k = 25), geom = "area", alpha = 0.75) +
-            geom_hline(yintercept = 0, color = "yellow") +
-            coord_cartesian(ylim = c(-0.15, 0.15))
+            geom_point(alpha = 0.25, aes(color = delta_sign)) +
+            stat_smooth(method = "gam", formula = y ~ s(x, bs = "cs", k = knots), geom = "area", alpha = 0.8) +
+            geom_hline(yintercept = 0, color = "black", size = 0.75) +
+            xlab("Time") +
+            ylab("Δ Weight (kg)") +
+            coord_cartesian(ylim = c(-0.2, 0.2)) +
+            theme_gray(18) +
+            theme(legend.title=element_blank())
         }
         if(type == "hist") {
           p <- ggplot(x, aes(value)) +
             geom_histogram(binwidth = 0.05) +
-            xlim(-5, 5)
+            xlim(-5, 5) +
+            theme_gray(18)
         }
   }
 

@@ -6,7 +6,7 @@
 #' @export
 clusterprep <- function(x, omit) {
   out <- x %>%
-    filter(weight_var == "Weight_decycled_diff") %>%
+    filter(weight_var == "wt_diff_clean_25h") %>%
     filter(!ScaleID %in% omit) %>%
     na.omit() %>%
     select(ScaleID, TimeStamp, weight = value) %>%

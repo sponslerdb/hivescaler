@@ -2,7 +2,7 @@
 % Please edit documentation in R/data_proc.R
 \name{mean25h}
 \alias{mean25h}
-\title{Remove daily periodicity by honey bee weight data by taking a 25-h running mean}
+\title{\code{mean25h} removes daily periodicity by honey bee weight data by taking a 25-h rolling mean}
 \usage{
 mean25h(x)
 }
@@ -13,5 +13,5 @@ mean25h(x)
 A vector of 25-h means with NA pad for first 12 and last 12 observations
 }
 \description{
-Remove daily periodicity by honey bee weight data by taking a 25-h running mean
+\code{mean25h} removes daily periodicity by honey bee weight data by taking a 25-h rolling mean
 }

@@ -2,22 +2,16 @@
 % Please edit documentation in R/data_proc.R
 \name{data_proc}
 \alias{data_proc}
-\title{\code{data_proc} generates and appends four new fields: a 25 h running mean of the despiekd weights,
-  a loess smoothing of the 25-h running mean,
-  a first-order difference vector of the loess-smoothed 25-h running mean,
-  and a z-normalization of the difference vector.}
+\title{\code{data_proc} creates wt_diff (differenced weight), wt_diff_clean (deartifacted differenced weight), wt_diff_clean_25h (25-h rolling mean), wt_recon (absolute weight reconstructed by taking the cumulative sum of the deartifacted differenced weight, normalized to zero starting weight), delta_sign (indicating whether each weight change was positive or negative), and TimeStamp_round (TimeStamp field rounded to nearest hour to enable time series alignment)}
 \usage{
 data_proc(x)
 }
 \arguments{
-\item{x}{A tibble or data frame}
+\item{x}{a tibble created by data_load}
 }
 \value{
-A tibble with added fields
+a tibble with new fields, gathered into a tudy array
 }
 \description{
-\code{data_proc} generates and appends four new fields: a 25 h running mean of the despiekd weights,
-  a loess smoothing of the 25-h running mean,
-  a first-order difference vector of the loess-smoothed 25-h running mean,
-  and a z-normalization of the difference vector.
+\code{data_proc} creates wt_diff (differenced weight), wt_diff_clean (deartifacted differenced weight), wt_diff_clean_25h (25-h rolling mean), wt_recon (absolute weight reconstructed by taking the cumulative sum of the deartifacted differenced weight, normalized to zero starting weight), delta_sign (indicating whether each weight change was positive or negative), and TimeStamp_round (TimeStamp field rounded to nearest hour to enable time series alignment)
 }

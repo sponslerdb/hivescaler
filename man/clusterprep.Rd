@@ -4,10 +4,12 @@
 \alias{clusterprep}
 \title{Convert data to aligned XTS object and transpose}
 \usage{
-clusterprep(x)
+clusterprep(x, omit)
 }
 \arguments{
 \item{x}{A tibble or data frame}
+
+\item{omit}{A vector of strings indicating ScaleIDs to be dropped}
 }
 \value{
 A data frame of row-wise time series
