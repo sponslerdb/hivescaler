@@ -9,7 +9,7 @@ clusterprep <- function(x, omit) {
     filter(weight_var == "wt_diff_clean_25h") %>%
     filter(!ScaleID %in% omit) %>%
     na.omit() %>%
-    select(ScaleID, TimeStamp, weight = value) %>%
+    select(ScaleID, TimeStamp_round, weight = value) %>%
     group_by(ScaleID) %>%
     nest() %>%
     mutate(data_xts = map(data, timetk::tk_xts)) %>% # Convert each item in list column to xts time series object
