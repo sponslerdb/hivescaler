@@ -11,8 +11,6 @@ Encoding: UTF-8
 LazyData: true
 Imports: 
   anytime,
-  hash,
-  oce,
   xts,
   timetk,
   tsoutliers,
@@ -28,5 +26,9 @@ Depends:
   forcats,
   dplyr,
   readr,
-  tibble
+  tibble,
+  harrietr,
+  rnoaa,
+  lubridate,
+  imputeTS
 RoxygenNote: 6.1.0

@@ -11,4 +11,6 @@
 #' @importFrom timetk tk_xts
 #' @import xts
 #' @import dtwclust
+#' @import harrietr
+#' @import rnoaa
 NULL
