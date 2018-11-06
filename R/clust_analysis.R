@@ -13,22 +13,35 @@ clusterprep <- function(x, omit) {
     group_by(ScaleID) %>%
     nest() %>%
     mutate(data_xts = map(data, timetk::tk_xts)) %>% # Convert each item in list column to xts time series object
-    mutate(aligned_xts = map(data_xts, xts_align)) %>% # Align to nearest hour; this enables merge step below
-    select(ScaleID, aligned_xts)
+    select(ScaleID, data_xts)
 
-  names(out$aligned_xts) <- out$ScaleID
+  names(out$data_xts) <- out$ScaleID
 
   return(out)
 }
 
-#' Align time series to nearest hour
+#' Convert data to aligned XTS object and transpose
 #'
-#' @param x An XTS time series object
-#' @return An XTS time series object with observations aligned to nearest hour
+#' @param x A tibble or data frame
+#' @param omit A vector of strings indicating ScaleIDs to be dropped
+#' @return A data frame of row-wise time series
 #' @export
-xts_align <- function(x) {
-  xts::align.time(x, 60*60)
+clusterprep_nightly <- function(x, omit) {
+  out <- x %>%
+    filter(weight_var == "nightly_diff") %>%
+    filter(!ScaleID %in% omit) %>%
+    na.omit() %>%
+    select(ScaleID, TimeStamp_round, weight = value) %>%
+    group_by(ScaleID) %>%
+    nest() %>%
+    mutate(data_xts = map(data, timetk::tk_xts)) %>% # Convert each item in list column to xts time series object
+    select(ScaleID, data_xts)
+
+  names(out$data_xts) <- out$ScaleID
+
+  return(out)
 }
+
 
 #' Cluster time series, plot dendrogram, print cluster validation indices
 #'
@@ -43,9 +56,31 @@ xts_align <- function(x) {
 cluster_func <- function(x, type = "hierarchical", distance = "gak",
                         trace = TRUE, control = "ward.D2") {
 
-  clust <- dtwclust::tsclust(x$aligned_xts, type = type, distance = distance,
+  clust <- dtwclust::tsclust(x$data_xts, type = type, distance = distance,
                              preproc = zscore, seed = 1, trace = trace,
                              control = hierarchical_control(method = control))
+
+  dtwclust::plot(clust) # Plot dendrogram
+
+  return(clust)
+}
+
+#' Cluster time series, plot dendrogram, print cluster validation indices
+#'
+#' @param x A data frame of row-wise time series
+#' @param type See dtwclust::tso
+#' @param distance See dtwclust::tso
+#' @param preproc See dtwclust::tso
+#' @param trace See dtwclust::tso
+#' @param control See dtwclust::tso
+#' @return A cluster object, dendrogram, and cluster validation indices
+#' @export
+cluster_func_k <- function(x, type = "partitional", distance = "sbd",
+                         trace = FALSE, k = 3) {
+
+  clust <- dtwclust::tsclust(x$data_xts, type = type, distance = distance,
+                             preproc = zscore, seed = 1, trace = trace, k = k,
+                             centroid = "shape")
 
   dtwclust::plot(clust) # Plot dendrogram
 

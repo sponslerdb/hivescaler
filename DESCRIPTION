@@ -13,11 +13,11 @@ Imports:
   anytime,
   xts,
   timetk,
-  tsoutliers,
   RSQLite,
   harrietr,
   dtwclust,
-  zoo
+  zoo,
+  vegan
 Depends:
   ggplot2,
   stringr,
