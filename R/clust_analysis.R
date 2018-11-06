@@ -4,7 +4,7 @@
 #' @param omit A vector of strings indicating ScaleIDs to be dropped
 #' @return A data frame of row-wise time series
 #' @export
-clusterprep <- function(x, omit) {
+clusterprep <- function(x, omit = NULL) {
   out <- x %>%
     filter(weight_var == "wt_diff_clean_25h") %>%
     filter(!ScaleID %in% omit) %>%
@@ -26,7 +26,7 @@ clusterprep <- function(x, omit) {
 #' @param omit A vector of strings indicating ScaleIDs to be dropped
 #' @return A data frame of row-wise time series
 #' @export
-clusterprep_nightly <- function(x, omit) {
+clusterprep_nightly <- function(x, omit = NULL) {
   out <- x %>%
     filter(weight_var == "nightly_diff") %>%
     filter(!ScaleID %in% omit) %>%
