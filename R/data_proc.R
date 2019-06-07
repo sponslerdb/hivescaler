@@ -2,8 +2,6 @@
 #'
 #' @param FilePath Path to BroodMinder SQLite database
 #' @param tz String identifying time zone
-#' @param ftrim String "YYYY-mm-dd" indicating front date cutoff
-#' @param btrim String "YYYY-mm-dd" indicating back date cutoff
 #' @param sep A string denoting the separator between the site and hive number in the HiveName field; assumes HiveName follows format site % sep % hive#
 #' @return A tibble containing selected fields and trimmed to front and back cutoff dates
 #' @export
@@ -51,7 +49,7 @@ mean25h <- function(x) {
 }
 
 
-#' \code{deartifacr} corrects artifacts by subtacting from each observation the cumulative sum of observations > delta_max.
+#' \code{deartifact} corrects artifacts by subtacting from each observation the cumulative sum of observations > delta_max.
 #' Empirically, histograms of my differenced show a consistent discontinuity around 2.5, suggesting that this is an appropriate value for delta_max.
 #'
 #' @param x A vector of differenced time-ordered observations
@@ -71,6 +69,8 @@ deartifact <- function(x, delta_max = 2.5) {
 #' \code{data_proc} creates wt_diff (differenced weight), wt_diff_clean (deartifacted differenced weight), wt_diff_clean_25h (25-h rolling mean), wt_recon (absolute weight reconstructed by taking the cumulative sum of the deartifacted differenced weight, normalized to zero starting weight), delta_sign (indicating whether each weight change was positive or negative), and TimeStamp_round (TimeStamp field rounded to nearest hour to enable time series alignment)
 #'
 #' @param x a tibble created by data_load
+#' @param ftrim String "YYYY-mm-dd" indicating front date cutoff
+#' @param btrim String "YYYY-mm-dd" indicating back date cutoff
 #' @return a tibble with new fields, gathered into a tudy array
 #' @export
 data_proc <- function(x, ftrim, btrim, omit = NULL) {
@@ -90,7 +90,35 @@ data_proc <- function(x, ftrim, btrim, omit = NULL) {
            TimeStamp_round > ftrim & TimeStamp_round < btrim) # trim data to desired start and end dates
 }
 
-#' \code{data_proc_nightly} creates wt_diff (differenced weight), wt_diff_clean (deartifacted differenced weight), wt_recon (absolute weight reconstructed by taking the cumulative sum of the deartifacted differenced weight, normalized to zero starting weight), delta_sign (indicating whether each weight change was positive or negative), and TimeStamp_round (TimeStamp field rounded to nearest hour to enable time series alignment)
+#' \code{data_proc_gam} a version of data_proc for downstream GAM
+#'
+#' @param x a tibble created by data_load
+#' @param ftrim String "YYYY-mm-dd" indicating front date cutoff
+#' @param btrim String "YYYY-mm-dd" indicating back date cutoff
+#' @return a tibble with new fields, gathered into a tudy array
+#' @export
+data_proc_gam <- function(x, ftrim, btrim, omit = NULL) {
+  x %>%
+    select(-Unix_Time) %>%
+    group_by(ScaleID) %>%
+    mutate(wt_diff = c(0, diff(Weight)),
+           wt_diff_clean = deartifact(wt_diff)) %>%
+    na.omit() %>%
+    mutate(wt_recon = cumsum(wt_diff_clean),
+           wt_recon_25h = mean25h(wt_recon)) %>%
+    ungroup() %>%
+    mutate(TimeStamp_round = lubridate::round_date(TimeStamp, unit = "hour"),
+           site = factor(Site),
+           time = as.numeric(TimeStamp_round)) %>%
+    select(TimeStamp_round, time, ScaleID, site, Hive, Weight, wt_diff, wt_diff_clean, wt_recon, wt_recon_25h) %>%
+    #gather(weight_var, value, -TimeStamp_round, time, -ScaleID, -site, -Hive) %>%
+    filter(!ScaleID %in% omit,
+           TimeStamp_round > ftrim & TimeStamp_round < btrim) %>% # trim data to desired start and end dates
+    mutate(ScaleID = factor(ScaleID))
+}
+
+
+#' \code{data_proc_nightly} a variant of data_proc that uses only midnight readings
 #'
 #' @param x a tibble created by data_load
 #' @return a tibble with new fields, gathered into a tudy array
@@ -145,7 +173,7 @@ plot_wt <- function(x, by = "site", metric, knots = 25, omit = NULL) {
 
   if(by == "none") {
     p <- ggplot(x, aes(x$TimeStamp_round, x$value)) +
-      geom_point(alpha = 0.05) +
+      geom_point(alpha = 0.1) +
       xlab("Time") +
       ylab("Weight (kg, zero-based)") +
       stat_smooth(method = "gam",
@@ -177,7 +205,7 @@ plot_delta <- function(x, type = "points", by = "none", metric, knots = 25, omit
   if(by == "hive") {
     if(type == "points") {
       p <- ggplot(x, aes(TimeStamp_round, value)) +
-        geom_point(alpha = 0.1, aes(color = delta_sign)) +
+        geom_point(alpha = 0.2, aes(color = delta_sign)) +
         #stat_smooth(method = "gam", formula = y ~ s(x, bs = "cs", k = knots), geom = "area", alpha = 0.8) +
         stat_smooth(method = "loess", formula = y ~ x,  span = 0.25, geom = "area", alpha = 0.8) +
         coord_cartesian(ylim = c(ymin, ymax)) +
@@ -199,7 +227,7 @@ plot_delta <- function(x, type = "points", by = "none", metric, knots = 25, omit
     if(by == "site") {
       if(type == "points") {
         p <- ggplot(x, aes(TimeStamp_round, value)) +
-          geom_point(alpha = 0.1, aes(color = delta_sign)) +
+          geom_point(alpha = 0.2, aes(color = delta_sign)) +
           #stat_smooth(method = "gam", formula = y ~ s(x, bs = "cs", k = knots), geom = "area", alpha = 0.8) +
           stat_smooth(method = "loess", formula = y ~ x,  span = 0.25, geom = "area", alpha = 0.8) +
           coord_cartesian(ylim = c(ymin, ymax)) +
@@ -221,7 +249,7 @@ plot_delta <- function(x, type = "points", by = "none", metric, knots = 25, omit
       if(by == "none") {
         if(type == "points") {
           p <- ggplot(x, aes(TimeStamp_round, value)) +
-            geom_point(alpha = 0.25, aes(color = delta_sign)) +
+            geom_point(alpha = 0.5, aes(color = delta_sign)) +
             #stat_smooth(method = "gam", formula = y ~ s(x, bs = "cs", k = knots), geom = "area", alpha = 0.8) +
             stat_smooth(method = "loess", formula = y ~ x,  span = 0.25, geom = "area", alpha = 0.8) +
             geom_hline(yintercept = 0, color = "black", size = 0.75) +

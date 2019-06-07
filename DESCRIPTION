@@ -9,16 +9,13 @@ Description: A set of tools for handling BroodMinder databases in R, visualizing
 License: GPL-3
 Encoding: UTF-8
 LazyData: true
-Imports: 
+Depends: 
   anytime,
   xts,
   timetk,
   RSQLite,
-  harrietr,
-  dtwclust,
   zoo,
-  vegan
-Depends:
+  vegan,
   ggplot2,
   stringr,
   tidyr,
@@ -27,8 +24,9 @@ Depends:
   dplyr,
   readr,
   tibble,
-  harrietr,
   rnoaa,
   lubridate,
-  imputeTS
+  imputeTS,
+  mgcViz,
+  gratia
 RoxygenNote: 6.1.0

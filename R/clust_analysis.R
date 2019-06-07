@@ -28,10 +28,11 @@ clusterprep <- function(x, omit = NULL) {
 #' @export
 clusterprep_nightly <- function(x, omit = NULL) {
   out <- x %>%
-    filter(weight_var == "nightly_diff") %>%
+    #filter(weight_var == "nightly_diff") %>%
     filter(!ScaleID %in% omit) %>%
     na.omit() %>%
-    select(ScaleID, TimeStamp_round, weight = value) %>%
+    #select(ScaleID, TimeStamp_round, weight = value) %>%
+    select(ScaleID, TimeStamp_round, wt_recon) %>%
     group_by(ScaleID) %>%
     nest() %>%
     mutate(data_xts = map(data, timetk::tk_xts)) %>% # Convert each item in list column to xts time series object
