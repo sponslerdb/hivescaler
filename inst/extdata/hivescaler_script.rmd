@@ -1,0 +1,1051 @@
+### Load data
+```{r}
+dat2017 <- data_load("~/hivescaler/inst/extdata/BM2017", tz = "EST")
+dat2018 <- data_load("~/hivescaler/inst/extdata/BM2018", tz = "EST")
+```
+
+### Process data: hourly
+```{r}
+dat2017_proc <- data_proc(dat2017, ftrim = "2017-06-01", btrim = "2017-09-10",
+                          omit = c("chestnuthill.1", "chestnuthill.2", "chestnuthill.3",
+                                   "paradiso.1", "paradiso.2", "paradiso.3",
+                                   "milt.1", "milt.2", "milt.3",
+                                   "saul.2", "sofitel.3")) # Chestnut Hill, Paradiso, and Milt are omitted because they were set up much later; Saul.2 and Sofitel.3 are omitted because of malfunctioning scales
+  dat2017_jun <- filter(dat2017_proc, TimeStamp_round >= "2017-06-01" & TimeStamp_round <= "2017-06-30")
+  dat2017_jul <- filter(dat2017_proc, TimeStamp_round >= "2017-07-01" & TimeStamp_round <= "2017-07-31")
+  dat2017_aug <- filter(dat2017_proc, TimeStamp_round >= "2017-08-01" & TimeStamp_round <= "2017-08-31")
+  dat2017_sep <- filter(dat2017_proc, TimeStamp_round >= "2017-09-01" & TimeStamp_round <= "2017-09-10")
+
+dat2018_proc <- data_proc(dat2018, ftrim = "2018-05-01", btrim = "2018-10-10",
+                                          omit = c("paradiso.3", "rodeph.3", "westphilly.3",
+                                                   "insectarium.1", "insectarium.2", "insectarium.3",
+                                                   "share.1", "share.2", "share.3")) # Insectarium is omitted because 2 of three colonies died midseason, and the third was practically dead at last inspection; Paradiso.3 died midseason, Rodeph.3 and WestPhilly.3 had dead batteries and so are missing large parts of the season; Share could possibly be included, but it was set up with only a deep and a medium on each hive, due to equipment shortage, so these hives had less room to grow, and the weight data appear to be somewhat flattened by this.
+  dat2018_may <- filter(dat2017_proc, TimeStamp_round >= "2018-05-01" & TimeStamp_round <= "2017-05-31")
+  dat2018_jun <- filter(dat2017_proc, TimeStamp_round >= "2018-06-01" & TimeStamp_round <= "2017-06-30")
+  dat2018_jul <- filter(dat2017_proc, TimeStamp_round >= "2018-07-01" & TimeStamp_round <= "2017-07-31")
+  dat2018_aug <- filter(dat2017_proc, TimeStamp_round >= "2018-08-01" & TimeStamp_round <= "2017-08-31")
+  dat2018_sep <- filter(dat2017_proc, TimeStamp_round >= "2018-09-01" & TimeStamp_round <= "2017-09-30")
+```
+
+### Prep data for GAM nightly
+```{r}
+# coords <- read_csv("~/Documents/Research/PhillyBees/year2018_data/GIS/apiaries_2018.csv") %>%
+#   mutate(name = factor(name))
+
+dat2017_proc_gam <- data_proc_gam(dat2017, ftrim = "2017-06-01", btrim = "2017-09-10",
+                          omit = c("chestnuthill.1", "chestnuthill.2", "chestnuthill.3",
+                                   "paradiso.1", "paradiso.2", "paradiso.3",
+                                   "milt.1", "milt.2", "milt.3",
+                                   "saul.2", "sofitel.3")) %>% # Chestnut Hill, Paradiso, and Milt are omitted because they were set up much later; Saul.2 and 
+  filter(hour(TimeStamp_round) == 00:00:00) %>%
+  group_by(ScaleID) %>%
+  arrange(TimeStamp_round) %>%
+  mutate(nightly_diff = c(NA, diff(wt_recon)))
+
+
+dat2018_proc_gam <- data_proc_gam(dat2018, ftrim = "2018-05-01", btrim = "2018-10-10",
+                                          omit = c("paradiso.3", "rodeph.3", "westphilly.3",
+                                                   "insectarium.1", "insectarium.2", "insectarium.3",
+                                                   "share.1", "share.2", "share.3")) %>%
+    filter(hour(TimeStamp_round) == 00:00:00) %>%
+  group_by(ScaleID) %>%
+  arrange(TimeStamp_round) %>%
+  mutate(nightly_diff = c(NA, diff(wt_recon)))
+
+```
+
+### GAM: weight_recon ~ site + s(time, by site) 
+```{r}
+# According to the help documentation (gam.models), when you use the "by" option with a factor, you should include the factor as a linear covariate
+gam_nightly_bySite_2017 <- gam(wt_recon ~ site + s(time, bs = "gp", k = 20, by = site),
+                method = "REML",
+                data = dat2017_proc_gam,
+                family = "scat")
+plot(gam_nightly_bySite_2017, 
+     all.terms = TRUE, 
+     shade = TRUE, 
+     seWithMean = TRUE, 
+     rug = FALSE,
+     shift = coef(gam_nightly_bySite_2017)[1])
+summary(gam_nightly_bySite_2017)
+gam.check(gam_nightly_bySite_2017)
+
+
+gam_nightly_bySite_2018 <- gam(wt_recon ~ site + s(time, bs = "gp", k = 20, by = site),
+                method = "REML",
+                data = dat2018_proc_gam,
+                family = "scat")
+plot(gam_nightly_bySite_2018, 
+     all.terms = TRUE, 
+     shade = TRUE, 
+     seWithMean = TRUE, 
+     rug = FALSE,
+     shift = coef(gam_nightly_bySite_2018)[1])
+summary(gam_nightly_bySite_2018)
+gam.check(gam_nightly_bySite_2018)
+```
+ 
+### GAM: nightly diff ~ site + s(time, by site) 
+```{r}
+### I think this one is my best bet; but should I be using an interaction term? I'm interested not just in the net directional effect of site, but its effect on the shape of my curves.
+gam_nightlydiff_bySite_2017 <- gam(nightly_diff ~ site + s(time, bs = "gp", k = 20, by = site),
+                method = "REML",
+                data = dat2017_proc_gam,
+                family = "scat")
+plot(gam_nightlydiff_bySite_2017, 
+     all.terms = TRUE, 
+     shade = TRUE, 
+     seWithMean = TRUE, 
+     rug = FALSE,
+     shift = coef(gam_nightly_bySite_2017)[1])
+summary(gam_nightlydiff_bySite_2017)
+gam.check(gam_nightlydiff_bySite_2017)
+
+gam_nightlydiff_bySite_2018 <- gam(nightly_diff ~ site + s(time, bs = "gp", k = 20, by = site),
+                method = "REML",
+                data = dat2018_proc_gam,
+                family = "scat")
+plot(gam_nightlydiff_bySite_2018, 
+     all.terms = TRUE, 
+     shade = TRUE, 
+     seWithMean = TRUE, 
+     rug = FALSE,
+     shift = coef(gam_nightlydiff_bySite_2018)[1])
+summary(gam_nightlydiff_bySite_2018)
+gam.check(gam_nightlydiff_bySite_2018)
+concurvity(gam_nightlydiff_bySite_2018, full = FALSE)
+```
+
+### GAM: weight_recon ~ time, site factor_smooth; factor smooths are best for when you are not especially interested in the respective effects of factor levels, but want to account for the effect of a factor in the overall model; also good when certain levels have few replicates (such as my case)
+```{r}
+gam_nightly_bySite_2017_fs <- gam(wt_recon ~ s(time, site, bs = "fs", k = 20),
+                method = "REML",
+                data = dat2017_proc_gam,
+                family = "scat")
+plot(gam_nightly_bySite_2017_fs, 
+     all.terms = TRUE, 
+     shade = TRUE, 
+     seWithMean = TRUE, 
+     rug = FALSE,
+     shift = coef(gam_nightly_bySite_2017_fs)[1])
+summary(gam_nightly_bySite_2017_fs)
+gam.check(gam_nightly_bySite_2017_fs)
+
+
+gam_nightly_bySite_2018_fs <- gam(wt_recon ~ s(time, site, bs = "fs", k = 20),
+                method = "REML",
+                data = dat2018_proc_gam,
+                family = "scat")
+par(cex = 1.3)
+plot(gam_nightly_bySite_2018_fs, 
+     all.terms = TRUE, 
+     shade = TRUE, 
+     seWithMean = TRUE, 
+     rug = FALSE,
+     shift = coef(gam_nightly_bySite_2018_fs)[1],
+     xlab = "Time",
+     ylab = "Weight smooth")
+summary(gam_nightly_bySite_2018_fs)
+gam.check(gam_nightly_bySite_2018_fs)
+
+### Consensus model
+gam_nightly_2018 <- gam(wt_recon ~ s(time, bs = "gp", k = 20),
+                method = "REML",
+                data = dat2018_proc_gam,
+                family = "scat")
+par(cex = 1.3)
+plot(gam_nightly_2018, 
+     all.terms = TRUE, 
+     shade = TRUE, 
+     seWithMean = TRUE, 
+     rug = FALSE,
+     shift = coef(gam_nightly_2018)[1],
+     residuals = FALSE,
+     xlab = "Time",
+     ylab = "Weight smooth")
+summary(gam_nightly_2018)
+gam.check(gam_nightly_2018)
+
+gam_nightlydiff_2018 <- gam(nightly_diff ~ s(time, bs = "gp", k = 20),
+                method = "REML",
+                data = dat2018_proc_gam,
+                family = "scat")
+par(cex = 1.3)
+plot(gam_nightlydiff_2018, 
+     all.terms = TRUE, 
+     shade = TRUE, 
+     seWithMean = TRUE, 
+     rug = FALSE,
+     shift = coef(gam_nightlydiff_2018)[1],
+     residuals = FALSE,
+     xlab = "Time",
+     ylab = "Weight difference smooth")
+abline(h = 0, col = "red")
+summary(gam_nightlydiff_2018)
+gam.check(gam_nightlydiff_2018)
+
+
+### Site effect model
+gam_nightly_2018_site <- gam(wt_recon ~ s(time, bs = "gp", k = 20, by = site) + site,
+                method = "REML",
+                data = dat2018_proc_gam,
+                family = "scat")
+par(cex = 1.3)
+plot(gam_nightly_2018_site, 
+     all.terms = TRUE, 
+     shade = TRUE, 
+     seWithMean = TRUE, 
+     rug = FALSE,
+     shift = coef(gam_nightly_2018_site)[1],
+     residuals = FALSE,
+     xlab = "Time",
+     ylab = "Weight smooth")
+summary(gam_nightly_2018_site)
+gam.check(gam_nightly_2018_site)
+
+gam_nightlydiff_2018_site <- gam(nightly_diff ~ s(time, bs = "gp", k = 20, by = site) + site,
+                method = "REML",
+                data = dat2018_proc_gam,
+                family = "scat")
+par(cex = 1.3)
+plot(gam_nightlydiff_2018_site, 
+     all.terms = TRUE, 
+     shade = TRUE, 
+     seWithMean = TRUE, 
+     rug = FALSE,
+     shift = coef(gam_nightlydiff_2018_site)[1],
+     residuals = FALSE,
+     xlab = "Time",
+     ylab = "Weight difference smooth")
+abline(h = 0, col = "red")
+summary(gam_nightlydiff_2018_site)
+gam.check(gam_nightlydiff_2018_site)
+
+```
+
+
+### GAM: nightly_diff ~ time, site factor_smooth; factor smooths are best for when you are not especially interested in the respective effects of factor levels, but want to account for the effect of a factor in the overall model; also good when certain levels have few replicates (such as my case)
+```{r}
+gam_nightlydiff_bySite_2017_fs <- gam(nightly_diff ~ s(time, site, bs = "fs", k = 20),
+                method = "REML",
+                data = dat2017_proc_gam,
+                family = "scat")
+plot(gam_nightlydiff_bySite_2017_fs, 
+     all.terms = TRUE, 
+     shade = TRUE, 
+     seWithMean = TRUE, 
+     rug = FALSE,
+     shift = coef(gam_nightlydiff_bySite_2017_fs)[1])
+summary(gam_nightlydiff_bySite_2017_fs)
+gam.check(gam_nightlydiff_bySite_2017_fs)
+
+
+gam_nightlydiff_bySite_2018_fs <- gam(nightly_diff ~ s(time, factor(ScaleID), bs = "fs", k = 20),
+                method = "REML",
+                data = dat2018_proc_gam,
+                family = "scat")
+plot(gam_nightlydiff_bySite_2018_fs, 
+     all.terms = TRUE, 
+     shade = TRUE, 
+     seWithMean = TRUE, 
+     rug = FALSE,
+     shift = coef(gam_nightlydiff_bySite_2018_fs)[1])
+summary(gam_nightlydiff_bySite_2018_fs)
+gam.check(gam_nightlydiff_bySite_2018_fs)
+
+
+gam_nightly_bySite_2018_fs <- gam(wt_recon ~ s(time, site, bs = "fs", k = 20),
+                method = "REML",
+                data = dat2018_proc_gam,
+                family = "scat")
+plot(gam_nightly_bySite_2018_fs, 
+     all.terms = TRUE, 
+     shade = TRUE, 
+     seWithMean = TRUE, 
+     rug = FALSE,
+     shift = coef(gam_nightly_bySite_2018_fs)[1])
+summary(gam_nightly_bySite_2018_fs)
+gam.check(gam_nightly_bySite_2018_fs)
+```
+
+### Validation of artifact threshold of 2.5
+```{r}
+plot_delta(dat2017_proc, by = "hive", type = "hist", metric = "wt_diff")
+plot_delta(dat2017_proc, by = "site", type = "hist", metric = "wt_diff")
+plot_delta(dat2017_proc, by = "none", type = "hist", metric = "wt_diff")
+
+plot_delta(dat2017_proc, by = "hive", type = "hist", metric = "wt_diff_clean")
+plot_delta(dat2017_proc, by = "site", type = "hist", metric = "wt_diff_clean")
+plot_delta(dat2017_proc, by = "none", type = "hist", metric = "wt_diff_clean")
+
+plot_delta(dat2018_proc, by = "hive", type = "hist", metric = "wt_diff")
+plot_delta(dat2018_proc, by = "site", type = "hist", metric = "wt_diff")
+plot_delta(dat2018_proc, by = "none", type = "hist", metric = "wt_diff")
+
+plot_delta(dat2018_proc, by = "hive", type = "hist", metric = "wt_diff_clean")
+plot_delta(dat2018_proc, by = "site", type = "hist", metric = "wt_diff_clean")
+plot_delta(dat2018_proc, by = "none", type = "hist", metric = "wt_diff_clean")
+```
+
+### Plot data (2017)
+```{r}
+plot_wt(dat2017_proc, by = "hive", metric = "wt_recon")
+plot_wt(dat2017_proc, by = "site", metric = "wt_recon")
+plot_wt(dat2017_proc, by = "none", metric = "wt_recon")
+
+plot_delta(dat2017_proc_nightly, by = "hive", type = "points", metric = "nightly_diff", ymin = -2.5, ymax = 2.5)
+plot_delta(dat2017_proc_nightly, by = "site", type = "points", metric = "nightly_diff", ymin = -2.5, ymax = 2.5)
+plot_delta(dat2017_proc_nightly, by = "none", type = "points", metric = "nightly_diff", ymin = -2.5, ymax = 2.5)
+```
+
+Plot data (2018)
+```{r}
+plot_wt(dat2018_proc, by = "hive", metric = "wt_recon")
+plot_wt(dat2018_proc, by = "site", metric = "wt_recon")
+plot_wt(dat2018_proc, by = "none", metric = "wt_recon")
+
+plot_wt(dat2018_proc, by = "hive", metric = "wt_recon")
+plot_wt(dat2018_proc, by = "site", metric = "wt_recon")
+plot_wt(filter(dat2018_proc, Site == "rodeph"), by = "none", metric = "Weight")
+
+ggplot(filter(dat2018_proc, Site == "rodeph" & weight_var == "Weight"), aes(TimeStamp_round, value, color = Hive)) +
+  geom_point()
+
+ggplot(filter(dat2018_proc, Site == "rodeph" & weight_var == "wt_diff"), aes(TimeStamp_round, value, color = Hive)) +
+  geom_point()
+
+ggplot(filter(dat2018_proc, Site == "rodeph" & weight_var == "wt_diff_clean"), aes(TimeStamp_round, value, color = Hive)) +
+  geom_point()
+
+ggplot(filter(dat2018_proc, Site == "rodeph" & weight_var == "wt_recon"), aes(TimeStamp_round, value, color = Hive)) +
+  geom_point()
+
+ggplot(filter(dat2018_proc_nightly, Site == "rodeph" & weight_var == "wt_recon"), aes(TimeStamp_round, value, color = Hive)) +
+  geom_point()
+
+ggplot(filter(dat2018_proc_gam, site == "rodeph"), aes(TimeStamp_round, nightly_diff, color = Hive)) +
+  geom_point()
+
+plot_delta(filter(dat2018_proc_nightly, Site == "rodeph"), by = "none", type = "points", metric = "nightly_diff", ymin = -2.5, ymax = 2.5)
+
+
+plot_delta(dat2018_proc, by = "hive", type = "points", metric = "wt_diff_clean_25h", ymin = -2.5, ymax = 2.5)
+plot_delta(dat2018_proc, by = "site", type = "points", metric = "wt_diff_clean_25h", ymin = -2.5, ymax = 2.5)
+plot_delta(dat2018_proc, by = "none", type = "points", metric = "wt_diff_clean_25h", ymin = -2.5, ymax = 2.5)
+
+plot_delta(dat2018_proc_nightly, by = "hive", type = "points", metric = "nightly_diff", ymin = -2.5, ymax = 2.5)
+plot_delta(dat2018_proc_nightly, by = "site", type = "points", metric = "nightly_diff", ymin = -2.5, ymax = 2.5)
+plot_delta(dat2018_proc_nightly, by = "none", type = "points", metric = "nightly_diff", ymin = -2.5, ymax = 2.5)
+```
+
+
+### ESA talk
+```{r}
+ggplot(dat2018_proc_gam, aes(TimeStamp_round, wt_recon)) +
+  geom_point(alpha = 0.25) +
+  stat_smooth(method = "gam", formula = y ~ s(x, bs = "cs", k = 60), se = FALSE, size = 2)
+
+ggplot(dat2018_proc_gam, aes(TimeStamp_round, nightly_diff, color = ScaleID)) +
+  geom_point(alpha = 0.15) +
+  stat_smooth(method = "gam", formula = y ~ s(x, bs = "cs", k = 60), se = FALSE, size = 2)
+
+ggplot(dat2018_proc_gam, aes(TimeStamp_round, Weight)) +
+  geom_point(alpha = 0.5) +
+  xlab("Time") +
+  ylab("Weight")
+
+ggplot(dat2018_proc_gam, aes(TimeStamp_round, wt_diff_clean)) +
+  geom_point(alpha = 0.25) +
+  xlab("Time") +
+  ylab("Weight")
+
+ggplot(dat2018_proc_gam, aes(TimeStamp_round, wt_recon)) +
+  geom_point(alpha = 0.25) +
+  stat_smooth(method = "gam", formula = y ~ s(x, bs = "cs", k = 60), se = FALSE, size = 2) +
+  xlab("Time") +
+  ylab("Weight") 
+
+# raw weight
+ggplot(filter(dat2018_proc, ScaleID == "rodeph.2", weight_var == "Weight"), aes(TimeStamp_round, value)) +
+  geom_point() +
+  xlab("Time") +
+  ylab("Weight (raw)") +
+  theme(axis.text=element_text(size=16),
+        axis.title=element_text(size=18))
+
+# raw weight
+ggplot(filter(dat2018_proc, ScaleID == "rodeph.2", weight_var == "Weight"), aes(TimeStamp_round, value)) +
+  geom_point() +
+  xlab("Time") +
+  ylab("Weight (raw)") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14))
+
+# diff
+ggplot(filter(dat2018_proc, ScaleID == "rodeph.2", weight_var == "wt_diff"), aes(TimeStamp_round, value)) +
+  geom_point() +
+  xlab("Time") +
+  ylab("Weight (difference)") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14))
+
+# diff clean
+ggplot(filter(dat2018_proc, ScaleID == "rodeph.2", weight_var == "wt_diff_clean"), aes(TimeStamp_round, value)) +
+  geom_point(alpha = 0.35) +
+  xlab("Time") +
+  ylab("Weight (difference)") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14))
+
+# recon
+ggplot(filter(dat2018_proc, ScaleID == "rodeph.2", weight_var == "wt_recon"), aes(TimeStamp_round, value)) +
+  geom_point() +
+  xlab("Time") +
+  ylab("Weight (reconstructed)") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14))
+
+# nightly _recon
+ggplot(filter(dat2018_proc_gam, ScaleID == "rodeph.2"), aes(TimeStamp_round, wt_recon)) +
+  geom_point() +
+  xlab("Time") +
+  ylab("Weight (nightly)") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14))
+
+# nightly diff
+ggplot(filter(dat2018_proc_gam, ScaleID == "rodeph.2"), aes(TimeStamp_round, nightly_diff)) +
+  geom_point() +
+  xlab("Time") +
+  ylab("Weight (nightly difference)") +
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14))
+```
+
+Plots for presentation
+```{r}
+### Plot porcessing steps (i.e. the weight vars)
+ggplot(dat2018_proc, aes(TimeStamp_round, value)) +
+  geom_point() +
+  facet_wrap(~weight_var, scales = "free_y")
+
+### Plot porcessing steps (i.e. the weight vars)
+ggplot(dat2018_proc_nightly, aes(TimeStamp_round, value)) +
+  geom_point() +
+  facet_wrap(~weight_var, scales = "free_y")
+
+### Stacked plot of delta and recon
+dat2018_proc$weight_var <- factor(dat2018_proc$weight_var, levels = c("Weight", "wt_recon", "wt_diff", "wt_diff_clean", "wt_diff_clean_25h"))
+
+ggplot(filter(dat2018_proc, weight_var %in% c("wt_recon", "wt_diff_clean_25h")), aes(x = TimeStamp_round, y = value)) +
+  geom_point(data = filter(dat2018_proc, weight_var == "wt_recon"),
+             alpha = 0.1, aes(color = delta_sign)) +
+  stat_smooth(data = filter(dat2018_proc, weight_var == "wt_recon"),
+              method = "gam", formula = y ~ s(x, bs = "cs", k = 25),
+              color = "black") +
+  stat_smooth(data = filter(dat2018_proc, weight_var == "wt_diff_clean_25h"), 
+              method = "gam", formula = y ~ s(x, bs = "cs", k = 25), 
+              geom = "area", alpha = 0.8) +
+  facet_grid(weight_var ~ ., scales = "free_y") +
+  xlab("Time") +
+  ylab("Δ Weight (kg)")
+  
+ggplot(filter(dat2018_proc, weight_var %in% c("wt_recon", "wt_diff_clean_25h")), aes(x = TimeStamp_round, y = value)) +
+  geom_point(data = filter(dat2018_proc, weight_var == "wt_recon"),
+             alpha = 0.1, aes(color = delta_sign)) +
+  stat_smooth(data = filter(dat2018_proc, weight_var == "wt_recon"),
+              method = "gam", formula = y ~ s(x, bs = "cs", k = 25),
+              color = "black") +
+  stat_smooth(data = filter(dat2018_proc, weight_var == "wt_diff_clean_25h"), 
+              method = "gam", formula = y ~ s(x, bs = "cs", k = 25), 
+              alpha = 0.8) +
+  facet_grid(weight_var ~ ., scales = "free_y") +
+  xlab("Time") +
+  ylab("Δ Weight (kg)")
+
+ggplot(filter(dat2018_proc, weight_var %in% c("wt_recon", "wt_diff_clean_25h")), aes(x = TimeStamp_round, y = value)) +
+  geom_point(alpha = 0.1, aes(color = delta_sign)) +
+  stat_smooth(data = filter(dat2018_proc, weight_var == "wt_recon"),
+              method = "gam", formula = y ~ s(x, bs = "cs", k = 25),
+              color = "black") +
+  stat_smooth(data = filter(dat2018_proc, weight_var == "wt_diff_clean_25h"), 
+              method = "gam", formula = y ~ s(x, bs = "cs", k = 25), 
+              geom = "area", alpha = 0.8) +
+  facet_grid(weight_var ~ ., scales = "free_y") +
+  xlab("Time") +
+  ylab("Δ Weight (kg)")
+```
+
+### Gaining days analysis
+```{r}
+gain_days_hive_2018 <- dat2018_proc_nightly %>%
+  filter(weight_var == "wt_recon",
+         delta_sign == "gain",
+         !ScaleID %in% c("rodeph.3", "westphilly.3", "insectarium.2")) %>%
+  group_by(Site, ScaleID) %>%
+  tally() %>%
+  arrange(-n)
+
+gain_days_site_2018 <- dat2018_proc_nightly %>%
+  filter(weight_var == "wt_recon",
+         delta_sign == "gain",
+         !ScaleID %in% c("rodeph.3", "westphilly.3", "insectarium.2")) %>%
+  group_by(Site, ScaleID) %>%
+  tally() %>%
+  group_by(Site) %>%
+  summarize(med_gd = median(n),
+            max_gd = max(n)) %>%
+  arrange(-max_gd)
+```
+
+### Cluster analysis
+```{r}
+dat2017_clustprep <- clusterprep_nightly(dat2017_proc_nightly)
+dat2017_clustprep_jun <- clusterprep_nightly(dat2017_proc_jun_nightly)
+dat2017_clustprep_jul <- clusterprep_nightly(dat2017_proc_jul_nightly)
+dat2017_clustprep_aug <- clusterprep_nightly(dat2017_proc_aug_nightly)
+dat2017_clustprep_sep <- clusterprep_nightly(dat2017_proc_sep_nightly)
+
+dat2018_clustprep <- clusterprep_nightly(dat2018_proc_gam)
+dat2018_clustprep_may <- clusterprep_nightly(dat2018_proc_may_nightly)
+dat2018_clustprep_jun <- clusterprep_nightly(dat2018_proc_jun_nightly)
+dat2018_clustprep_jul <- clusterprep_nightly(dat2018_proc_jul_nightly)
+dat2018_clustprep_aug <- clusterprep_nightly(dat2018_proc_aug_nightly)
+dat2018_clustprep_sep <- clusterprep_nightly(dat2018_proc_sep_nightly)
+
+
+dat2017_clust <- cluster_func(dat2017_clustprep, distance = "Euclidean") # since I am using z-normalization as a preproc step, the ED is scale and translation invariant; I do not want it o be phase invariant, so I am staying away from SBD and DTW, etc.
+dat2017_clust_jun <- cluster_func(dat2017_clustprep_jun, distance = "Euclidean")
+dat2017_clust_jul <- cluster_func(dat2017_clustprep_jul, distance = "Euclidean")
+dat2017_clust_aug <- cluster_func(dat2017_clustprep_aug, distance = "Euclidean")
+dat2017_clust_sep <- cluster_func(dat2017_clustprep_sep, distance = "Euclidean")
+
+dat2018_clust <- cluster_func(dat2018_clustprep, distance = "Euclidean")
+dat2018_clust_may <- cluster_func(dat2018_clustprep_may, distance = "Euclidean")
+dat2018_clust_jun <- cluster_func(dat2018_clustprep_jun, distance = "Euclidean")
+dat2018_clust_jul <- cluster_func(dat2018_clustprep_jul, distance = "Euclidean")
+dat2018_clust_aug <- cluster_func(dat2018_clustprep_aug, distance = "Euclidean")
+dat2018_clust_sep <- cluster_func(dat2018_clustprep_sep, distance = "Euclidean")
+```
+
+### Extract and tabulate distance matrices for weight time series
+```{r}
+# Tabulate weight time series distance matrices
+dat2017_tab_dist <- tab_dist(dat2017_clust)
+dat2017_tab_dist_jun <- tab_dist(dat2017_clust_jun)
+dat2017_tab_dist_jul <- tab_dist(dat2017_clust_jul)
+dat2017_tab_dist_aug <- tab_dist(dat2017_clust_aug)
+dat2017_tab_dist_sep <- tab_dist(dat2017_clust_sep)
+
+dat2018_tab_dist <- tab_dist(dat2018_clust)
+dat2018_tab_dist_may <- tab_dist(dat2018_clust_may)
+dat2018_tab_dist_jun <- tab_dist(dat2018_clust_jun)
+dat2018_tab_dist_jul <- tab_dist(dat2018_clust_jul)
+dat2018_tab_dist_aug <- tab_dist(dat2018_clust_aug)
+dat2018_tab_dist_sep <- tab_dist(dat2018_clust_sep)
+
+
+key <- tibble(name = c("chestnuthill", "greensgrow", "insectarium",
+                       "milt", "mtmoriah", "oldcity",
+                       "paradiso", "rodeph", "saul",
+                       "share", "shump", "sofitel", "westphilly"),
+              abb = c("CH", "KE", "NE",
+                      "EG", "SW", "OC",
+                      "SP", "SG", "RB",
+                      "NT", "FF", "CC", "WP"))
+
+dat2017_dist_sum <- dat2017_tab_dist %>%
+  group_by(siteA, siteB) %>%
+  summarize(med_wt_dist = median(dist)) %>%
+  ungroup() %>%
+  left_join(key, by = c("siteA" = "name")) %>%
+  left_join(key, by = c("siteB" = "name")) %>%
+  select(item1 = abb.x, item2 = abb.y, med_wt_dist)
+dat2017_dist_sum2 <- dat2017_dist_sum %>%
+  select(item1 = item2, item2 = item1, med_wt_dist)
+
+dat2018_dist_sum <- dat2018_tab_dist %>%
+  group_by(siteA, siteB) %>%
+  summarize(med_wt_dist = median(dist)) %>% # get median hive by hive distance for each pair of sites
+  ungroup() %>%
+  left_join(key, by = c("siteA" = "name")) %>% # convert full names to abbreviations using key defined above
+  left_join(key, by = c("siteB" = "name")) %>%
+  select(item1 = abb.x, item2 = abb.y, med_wt_dist) # reorder and rename
+dat2018_dist_sum2 <- dat2018_dist_sum %>% # make a clone of dat2018_dist_sum but with the order of site pairs reversed
+  select(item1 = item2, item2 = item1, med_wt_dist)
+
+dat2018_dist_sum_may <- dat2018_tab_dist_may %>%
+  group_by(siteA, siteB) %>%
+  summarize(med_wt_dist = median(dist)) %>% # get median hive by hive distance for each pair of sites
+  ungroup() %>%
+  left_join(key, by = c("siteA" = "name")) %>% # convert full names to abbreviations using key defined above
+  left_join(key, by = c("siteB" = "name")) %>%
+  select(item1 = abb.x, item2 = abb.y, med_wt_dist) # reorder and rename
+dat2018_dist_sum2_may <- dat2018_dist_sum_may %>% # make a clone of dat2018_dist_sum but with the order of site pairs reversed
+  select(item1 = item2, item2 = item1, med_wt_dist)
+
+dat2018_dist_sum_jun <- dat2018_tab_dist_jun %>%
+  group_by(siteA, siteB) %>%
+  summarize(med_wt_dist = median(dist)) %>% # get median hive by hive distance for each pair of sites
+  ungroup() %>%
+  left_join(key, by = c("siteA" = "name")) %>% # convert full names to abbreviations using key defined above
+  left_join(key, by = c("siteB" = "name")) %>%
+  select(item1 = abb.x, item2 = abb.y, med_wt_dist) # reorder and rename
+dat2018_dist_sum2_jun <- dat2018_dist_sum_jun %>% # make a clone of dat2018_dist_sum but with the order of site pairs reversed
+  select(item1 = item2, item2 = item1, med_wt_dist)
+
+dat2018_dist_sum_jul <- dat2018_tab_dist_jul %>%
+  group_by(siteA, siteB) %>%
+  summarize(med_wt_dist = median(dist)) %>% # get median hive by hive distance for each pair of sites
+  ungroup() %>%
+  left_join(key, by = c("siteA" = "name")) %>% # convert full names to abbreviations using key defined above
+  left_join(key, by = c("siteB" = "name")) %>%
+  select(item1 = abb.x, item2 = abb.y, med_wt_dist) # reorder and rename
+dat2018_dist_sum2_jul <- dat2018_dist_sum_jul %>% # make a clone of dat2018_dist_sum but with the order of site pairs reversed
+  select(item1 = item2, item2 = item1, med_wt_dist)
+
+dat2018_dist_sum_aug <- dat2018_tab_dist_aug %>%
+  group_by(siteA, siteB) %>%
+  summarize(med_wt_dist = median(dist)) %>% # get median hive by hive distance for each pair of sites
+  ungroup() %>%
+  left_join(key, by = c("siteA" = "name")) %>% # convert full names to abbreviations using key defined above
+  left_join(key, by = c("siteB" = "name")) %>%
+  select(item1 = abb.x, item2 = abb.y, med_wt_dist) # reorder and rename
+dat2018_dist_sum2_aug <- dat2018_dist_sum_aug %>% # make a clone of dat2018_dist_sum but with the order of site pairs reversed
+  select(item1 = item2, item2 = item1, med_wt_dist)
+
+dat2018_dist_sum_sep <- dat2018_tab_dist_sep %>%
+  group_by(siteA, siteB) %>%
+  summarize(med_wt_dist = median(dist)) %>% # get median hive by hive distance for each pair of sites
+  ungroup() %>%
+  left_join(key, by = c("siteA" = "name")) %>% # convert full names to abbreviations using key defined above
+  left_join(key, by = c("siteB" = "name")) %>%
+  select(item1 = abb.x, item2 = abb.y, med_wt_dist) # reorder and rename
+dat2018_dist_sum2_sep <- dat2018_dist_sum_sep %>% # make a clone of dat2018_dist_sum but with the order of site pairs reversed
+  select(item1 = item2, item2 = item1, med_wt_dist)
+```
+
+### Load land cover and geographic distance matrices generated on desktop
+```{r}
+distmat_lc_2017 <- readRDS("~/hivescaler/inst/extdata/lc_distmat_2017.rds")
+distmat_lc_2018 <- readRDS("~/hivescaler/inst/extdata/lc_distmat_2018.rds") 
+
+distmat_geo_2017 <- readRDS("~/hivescaler/inst/extdata/geo_distmat_2017.rds")
+distmat_geo_2018 <- readRDS("~/hivescaler/inst/extdata/geo_distmat_2018.rds")
+```
+
+###
+```{r}
+dist_wt_2017 <- full_join(dat2017_dist_sum, dat2017_dist_sum2) %>%
+  spread(item2, med_wt_dist) %>%
+  select(-item1) %>%
+  as.dist()
+
+# Construct a median weight distance matrix that can be passed to mantel()
+dist_wt_2018 <- full_join(dat2018_dist_sum, dat2018_dist_sum2) %>% # some dplyr gymnastics are required 
+  spread(item2, med_wt_dist) %>% # wide form
+  select(-item1) %>% 
+  as.dist() # conver to dist object to be passed to mantel()
+
+# Construct a median weight distance matrix that can be passed to mantel()
+dist_wt_2018_may <- full_join(dat2018_dist_sum_may, dat2018_dist_sum2_may) %>% # some dplyr gymnastics are required 
+  spread(item2, med_wt_dist) %>% # wide form
+  select(-item1) %>% 
+  as.dist() # conver to dist object to be passed to mantel()
+
+# Construct a median weight distance matrix that can be passed to mantel()
+dist_wt_2018_jun <- full_join(dat2018_dist_sum_jun, dat2018_dist_sum2_jun) %>% # some dplyr gymnastics are required 
+  spread(item2, med_wt_dist) %>% # wide form
+  select(-item1) %>% 
+  as.dist() # conver to dist object to be passed to mantel()
+
+# Construct a median weight distance matrix that can be passed to mantel()
+dist_wt_2018_jul <- full_join(dat2018_dist_sum_jul, dat2018_dist_sum2_jul) %>% # some dplyr gymnastics are required 
+  spread(item2, med_wt_dist) %>% # wide form
+  select(-item1) %>% 
+  as.dist() # conver to dist object to be passed to mantel()
+
+# Construct a median weight distance matrix that can be passed to mantel()
+dist_wt_2018_aug <- full_join(dat2018_dist_sum_aug, dat2018_dist_sum2_aug) %>% # some dplyr gymnastics are required 
+  spread(item2, med_wt_dist) %>% # wide form
+  select(-item1) %>% 
+  as.dist() # conver to dist object to be passed to mantel()
+
+# Construct a median weight distance matrix that can be passed to mantel()
+dist_wt_2018_sep <- full_join(dat2018_dist_sum_sep, dat2018_dist_sum2_sep) %>% # some dplyr gymnastics are required 
+  spread(item2, med_wt_dist) %>% # wide form
+  select(-item1) %>% 
+  as.dist() # conver to dist object to be passed to mantel()
+
+mantel(distmat_lc_2017, dist_wt_2017)
+mantel(distmat_geo_2017, dist_wt_2017)
+mantel(distmat_geo_2017, distmat_lc_2017)
+
+mantel(distmat_lc_2018, dist_wt_2018)
+mantel(distmat_geo_2018, dist_wt_2018)
+mantel(distmat_geo_2018, distmat_lc_2018)
+
+mantel(distmat_lc_2018, dist_wt_2018_nightly)
+mantel(distmat_geo_2018, dist_wt_2018_nightly)
+
+mantel(distmat_lc_2018, dist_wt_2018_may)
+mantel(distmat_geo_2018, dist_wt_2018_may)
+
+mantel(distmat_lc_2018, dist_wt_2018_jun)
+mantel(distmat_geo_2018, dist_wt_2018_jun)
+
+mantel(distmat_lc_2018, dist_wt_2018_jul)
+mantel(distmat_geo_2018, dist_wt_2018_jul)
+
+mantel(distmat_lc_2018, dist_wt_2018_aug)
+mantel(distmat_geo_2018, dist_wt_2018_aug)
+
+mantel(distmat_lc_2018, dist_wt_2018_sep)
+mantel(distmat_geo_2018, dist_wt_2018_sep)
+```
+
+### Load geographic and land cover data (analyses performed on desktop) for plotting
+```{r}
+disttab_lc <- read_csv("~/hivescaler/inst/extdata/distmat_lc.csv") # 2017 and 2018 combined
+
+dist_mat_lc_wt_2017 <- dat2017_dist_sum %>%
+  full_join(dat2017_dist_sum2) %>%
+  full_join(disttab_lc) %>%
+  na.omit()
+
+dist_mat_lc_wt_2018 <- dat2018_dist_sum %>%
+  full_join(dat2018_dist_sum2) %>%
+  full_join(disttab_lc) %>%
+  na.omit()
+
+dist_mat_lc_wt_2018_may <- dat2018_dist_sum_may %>%
+  full_join(dat2018_dist_sum2_may) %>%
+  full_join(disttab_lc) %>%
+  na.omit()
+
+dist_mat_lc_wt_2018_jun <- dat2018_dist_sum_jun %>%
+  full_join(dat2018_dist_sum2_jun) %>%
+  full_join(disttab_lc) %>%
+  na.omit()
+
+dist_mat_lc_wt_2018_jul <- dat2018_dist_sum_jul %>%
+  full_join(dat2018_dist_sum2_jul) %>%
+  full_join(disttab_lc) %>%
+  na.omit()
+
+dist_mat_lc_wt_2018_aug <- dat2018_dist_sum_aug %>%
+  full_join(dat2018_dist_sum2_aug) %>%
+  full_join(disttab_lc) %>%
+  na.omit()
+
+dist_mat_lc_wt_2018_sep <- dat2018_dist_sum_sep %>%
+  full_join(dat2018_dist_sum2_sep) %>%
+  full_join(disttab_lc) %>%
+  na.omit()
+```
+
+### Plot distance regressions
+```{r}
+ggplot(dist_mat_lc_wt_2017, aes(geo_dist, med_wt_dist)) +
+  geom_point() +
+  stat_smooth()
+ggplot(dist_mat_lc_wt_2017, aes(lc_dist, med_wt_dist)) +
+  geom_point() +
+  stat_smooth()
+ggplot(dist_mat_lc_wt_2017, aes(geo_dist, lc_dist)) +
+  geom_point() +
+  stat_smooth()
+
+
+ggplot(dist_mat_lc_wt_2018, aes(geo_dist, med_wt_dist)) +
+  geom_point() +
+  stat_smooth()
+ggplot(dist_mat_lc_wt_2018, aes(lc_dist, med_wt_dist)) +
+  geom_point() +
+  stat_smooth()
+ggplot(dist_mat_lc_wt_2018, aes(geo_dist, lc_dist)) +
+  geom_point() +
+  stat_smooth()
+
+ggplot(dist_mat_lc_wt_2018_may, aes(geo_dist, med_wt_dist)) +
+  geom_point() +
+  stat_smooth()
+ggplot(dist_mat_lc_wt_2018_may, aes(lc_dist, med_wt_dist)) +
+  geom_point() +
+  stat_smooth()
+
+ggplot(dist_mat_lc_wt_2018_jun, aes(geo_dist, med_wt_dist)) +
+  geom_point() +
+  stat_smooth()
+ggplot(dist_mat_lc_wt_2018_jun, aes(lc_dist, med_wt_dist)) +
+  geom_point() +
+  stat_smooth()
+
+ggplot(dist_mat_lc_wt_2018_aug, aes(geo_dist, med_wt_dist)) +
+  geom_point() +
+  stat_smooth()
+ggplot(dist_mat_lc_wt_2018_aug, aes(lc_dist, med_wt_dist)) +
+  geom_point() +
+  stat_smooth()
+
+ggplot(dist_mat_lc_wt_2018_sep, aes(geo_dist, med_wt_dist)) +
+  geom_point() +
+  stat_smooth()
+ggplot(dist_mat_lc_wt_2018_sep, aes(lc_dist, med_wt_dist)) +
+  geom_point() +
+  stat_smooth()
+
+#lm_wt_geo_2017 <- lm(med_wt_dist ~ log(geo_dist), data = dist_mat_lc_wt_2017)
+```
+
+### Test for site effect on wt distance
+```{r}
+site_effect(dat2017_tab_dist)
+site_effect(dat2017_tab_dist_jun)
+site_effect(dat2017_tab_dist_jul)
+site_effect(dat2017_tab_dist_aug)
+site_effect(dat2017_tab_dist_sep)
+
+site_effect(dat2018_tab_dist)
+site_effect(dat2018_tab_dist_may)
+site_effect(dat2018_tab_dist_jun)
+site_effect(dat2018_tab_dist_jul)
+site_effect(dat2018_tab_dist_aug)
+site_effect(dat2018_tab_dist_sep)
+```
+
+
+### GDD analysis
+```{r}
+token <- "pXINZDyCrPudpyRYrlHUomgipePyXrlX"
+
+
+PHL_INT_2017 <- load_noaa(stationid = "GHCND:USW00013739",
+                          startdate = "2017-01-01",
+                          enddate = "2017-09-22",
+                          datasetid = "GHCND",
+                          limit = 1000,
+                          datatypeid = c("PRCP", "TMAX", "TMIN"),
+                          token = token)
+
+PHL_INT_2018 <- load_noaa(stationid = "GHCND:USW00013739",
+                          startdate = "2018-01-01",
+                          enddate = "2018-09-22",
+                          datasetid = "GHCND",
+                          limit = 1000,
+                          datatypeid = c("PRCP", "TMAX", "TMIN"),
+                          token = token)
+
+ggplot(PHL_INT_2017, aes(date, gdd_cum)) +
+  geom_point()
+ggplot(PHL_INT_2018, aes(date, gdd_cum)) +
+  geom_point()
+
+ggplot(PHL_INT_2017, aes(date, precip_bin)) +
+  geom_point()
+ggplot(PHL_INT_2018, aes(date, precip_bin)) +
+  geom_point()
+
+wt_noaa_2017 <- wt_noaa_join(dat2017_proc, PHL_INT_2017)
+wt_noaa_2018 <- wt_noaa_join(dat2018_proc, PHL_INT_2018)
+rm(dat2017, dat2017_proc, dat2018, dat2018_proc)
+
+png("~/Desktop/wt_noaa_2017_cal.png", height = 4, width = 6, units = "in", res = 300)
+ggplot(filter(wt_noaa_2017, weight_var %in% c("wt_diff_clean_25h", "wt_recon")), aes(TimeStamp_round, value, color = precip_bin)) +
+  geom_point(stat = "identity") +
+  facet_grid(weight_var ~ ., scales =  "free")
+dev.off()
+
+png("~/Desktop/wt_noaa_2017_gdd.png", height = 4, width = 6, units = "in", res = 300)
+ggplot(filter(wt_noaa_2017, weight_var %in% c("wt_diff_clean_25h", "wt_recon")), aes(gdd_int, value, color = precip_bin)) +
+  geom_point(stat = "identity") +
+  facet_grid(weight_var ~ ., scales =  "free")
+dev.off()
+
+png("~/Desktop/wt_noaa_2018_cal.png", height = 4, width = 6, units = "in", res = 300)
+ggplot(filter(wt_noaa_2018, weight_var %in% c("wt_diff_clean_25h", "wt_recon")), aes(TimeStamp_round, value, color = precip_bin)) +
+  geom_point(stat = "identity") +
+  facet_grid(weight_var ~ ., scales =  "free")
+dev.off()
+
+png("~/Desktop/wt_noaa_2018_gdd.png", height = 4, width = 6, units = "in", res = 300)
+ggplot(filter(wt_noaa_2018, weight_var %in% c("wt_diff_clean_25h", "wt_recon")), aes(gdd_int, value, color = precip_bin)) +
+  geom_point(stat = "identity") +
+  facet_grid(weight_var ~ ., scales =  "free")
+dev.off()
+
+wt_noaa_yearjoin <- full_join(wt_noaa_2017, wt_noaa_2018, by = "gdd_int") %>%
+  mutate(year.x = year(TimeStamp_round.x),
+         year.y = year(TimeStamp_round.y),
+         year = coalesce(year.x, year.y),
+         weight_var = coalesce(weight_var.x, weight_var.y),
+         value = coalesce(value.x, value.y),
+         precip_bin = coalesce(precip_bin.x, precip_bin.y),
+         delta_sign = coalesce(delta_sign.x, delta_sign.y))
+
+wt_noaa_yearjoin_corr <- wt_noaa_yearjoin %>%
+  na.omit()
+
+png("~/Desktop/wt_noaa_yearjoin_wtrecon.png", height = 4, width = 6, units = "in", res = 300)
+ggplot(filter(wt_noaa_yearjoin, weight_var %in% c("wt_recon")), aes(gdd_int, value, color = precip_bin)) +
+  geom_point(stat = "identity") +
+  facet_grid(year ~ ., scales =  "free_y") +
+  stat_smooth(color = "black")
+dev.off()
+
+png("~/Desktop/wt_noaa_yearjoin_wtdiff.png", height = 4, width = 6, units = "in", res = 300)
+ggplot(filter(wt_noaa_yearjoin, weight_var %in% c("wt_diff_clean_25h")), aes(gdd_int, value, color = precip_bin)) +
+  geom_point(stat = "identity") +
+  facet_grid(year ~ ., scales =  "free_y") +
+  stat_smooth()
+dev.off()
+
+png("~/Desktop/wt_noaa_yearjoin_wtdiff2.png", height = 4, width = 6, units = "in", res = 300)
+ggplot(filter(wt_noaa_yearjoin, weight_var %in% c("wt_diff_clean_25h")), aes(gdd_int, value, color = preci)) +
+  geom_point(stat = "identity") +
+  facet_grid(year ~ ., scales =  "free_y") +
+  stat_smooth()
+dev.off()
+
+
+boxplot(value ~ precip_bin, data = filter(weather_2017, weight_var == "wt_diff_clean_25h"))
+boxplot(value ~ precip_bin, data = filter(weather_2018, weight_var == "wt_diff_clean_25h"))
+
+boxplot(value ~ precip_bin, data = filter(weather_2017, weight_var == "wt_diff_clean"))
+boxplot(value ~ precip_bin, data = filter(weather_2018, weight_var == "wt_diff_clean"))
+
+chisq.test(filter(weather_2017, weight_var == "wt_diff_clean")$delta_sign,
+           filter(weather_2017, weight_var == "wt_diff_clean")$precip_bin)
+
+chisq.test(filter(weather_2018, weight_var == "wt_diff_clean")$delta_sign,
+           filter(weather_2018, weight_var == "wt_diff_clean")$precip_bin)
+
+
+group_by(filter(weather_2017, weight_var == "wt_diff_clean"), precip_bin) %>%
+  summarise(mean = mean(value))
+
+group_by(filter(weather_2018, weight_var == "wt_diff_clean"), precip_bin) %>%
+  summarise(mean = mean(value))
+```
+
+
+### Exploring manual GAM fitting
+```{r}
+dat2018_proc_nightly_mod <- dat2018_proc_nightly %>%
+  ungroup() %>%
+  mutate(time = as.numeric(TimeStamp_round),
+         site = factor(Site)) %>%
+  filter(weight_var == "wt_recon")%>%
+  arrange(time)
+
+dat2018_proc_mod <- dat2018_proc %>%
+  ungroup() %>%
+  mutate(time = as.numeric(TimeStamp_round),
+         site = factor(Site)) %>%
+  filter(weight_var == "wt_recon")%>%
+  arrange(time)
+
+
+gam_global <- gam(value ~ s(time, bs = "tp"), 
+             data = dat2018_proc_nightly_mod,
+             method = "REML")
+plot(gam_global, shade = TRUE, residuals = TRUE)
+summary(gam_global)
+plot(cumsum(predict(gam_global)))
+
+gam_global_def <- gam(value ~ s(time, bs = "gp"), # the gaussian process (gp) smoother accounts for temporal autocorrelation
+             data = dat2018_proc_nightly_mod,
+             method = "REML")
+plot(gam_global, shade = TRUE, residuals = TRUE)
+summary(gam_global)
+plot(cumsum(predict(gam_global)))
+
+gam_global_k20 <- gam(value ~ s(time, bs = "gp", k = 20), # the gaussian process (gp) smoother accounts for temporal autocorrelation
+             data = dat2018_proc_nightly_mod,
+             method = "REML")
+plot(gam_global, shade = TRUE, residuals = TRUE)
+summary(gam_global)
+plot(cumsum(predict(gam_global)))
+
+gam_global_k40 <- gam(value ~ s(time, bs = "gp", k = 40), # the gaussian process (gp) smoother accounts for temporal autocorrelation
+             data = dat2018_proc_nightly_mod,
+             method = "REML")
+plot(gam_global, shade = TRUE, residuals = TRUE)
+summary(gam_global)
+plot(cumsum(predict(gam_global)))
+
+gam_global_k100 <- gam(value ~ s(time, bs = "gp", k = 100), # the gaussian process (gp) smoother accounts for temporal autocorrelation
+             data = dat2018_proc_nightly_mod,
+             method = "REML")
+plot(gam_global, shade = TRUE, residuals = TRUE)
+summary(gam_global)
+plot(cumsum(predict(gam_global)))
+
+gam_global <- gam(value ~ s(time, site, bs = "fs"), #
+             data = dat2018_proc_nightly_mod)
+plot(gam_global, shade = TRUE)
+summary(gam_global)
+plot(cumsum(predict(gam_global)))
+
+gam_global <- gam(value ~ te(time, site, 
+                             bs = c("gp", "re")), #
+             data = dat2018_proc_nightly_mod)
+plot(gam_global, shade = TRUE)
+summary(gam_global)
+plot(cumsum(predict(gam_global)))
+
+gam_global <- gam(value ~ te(time, bs = "gp") + 
+                    ti(time, site, bs = c("gp", "re")), data = dat2018_proc_nightly_mod)
+plot(gam_global, shade = TRUE)
+summary(gam_global)
+plot(cumsum(predict(gam_global)))
+
+gam_global <- gam(value ~ te(time, bs = "gp", by = site, k = 10), data = dat2018_proc_nightly_mod)
+plot(gam_global, shade = TRUE)
+summary(gam_global)
+plot(cumsum(predict(gam_global)))
+
+gam_global <- gam(value ~ te(time, bs = "gp", by = site), data = dat2018_proc_nightly_mod)
+plot(gam_global, shade = TRUE)
+summary(gam_global)
+plot(cumsum(predict(gam_global)))
+
+gam_global <- gam(value ~ s(time, site, bs = "fs"), data = dat2018_proc_nightly_mod,
+             method = "REML")
+plot(gam_global, shade = TRUE)
+summary(gam_global)
+plot(cumsum(predict(gam_global)))
+
+gam_global <- gam(value ~ s(time, bs = "gp") + site, data = dat2018_proc_nightly_mod,
+             method = "REML")
+plot(gam_global, shade = TRUE, all.terms = TRUE)
+summary(gam_global)
+plot(cumsum(predict(gam_global)))
+
+gam_global <- gam(value ~ s(time, by = site, bs = "gp"), data = dat2018_proc_nightly_mod,
+             method = "REML")
+plot(gam_global, shade = TRUE, all.terms = TRUE, shift = coef(gam_global)[1])
+summary(gam_global)
+plot(cumsum(predict(gam_global)))
+
+gam.check(gam_global)
+```
+
+```{r}
+dat2018_proc_nightly_mod <- dat2018_proc_nightly %>%
+  mutate(time = as.numeric(TimeStamp_round)) %>%
+  filter(weight_var == "wt_recon")%>%
+  arrange(time)
+
+gam_rodeph <- gam(value ~ s(time), 
+             data = filter(dat2018_proc_nightly_mod, Site == "rodeph"),
+             knots = 10)
+plot(gam_rodeph, shade = TRUE, residuals =  TRUE)
+summary(gam_rodeph)
+
+```
+
+
+
+
+
