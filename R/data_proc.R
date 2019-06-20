@@ -71,7 +71,7 @@ deartifact <- function(x, delta_max = 2.5) {
 #' @param x a tibble created by data_load
 #' @param ftrim String "YYYY-mm-dd" indicating front date cutoff
 #' @param btrim String "YYYY-mm-dd" indicating back date cutoff
-#' @return a tibble with new fields, gathered into a tudy array
+#' @return a tibble with new fields, gathered into a tidy array
 #' @export
 data_proc <- function(x, ftrim, btrim, omit = NULL) {
   x %>%

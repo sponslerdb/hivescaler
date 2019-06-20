@@ -1,0 +1,242 @@
+### Load data
+```{r}
+dat2017 <- data_load("~/hivescaler/inst/extdata/BM2017", tz = "EST")
+dat2018 <- data_load("~/hivescaler/inst/extdata/BM2018", tz = "EST")
+```
+
+### Prep data for GAM
+```{r}
+dat2017_proc_gam <- data_proc_gam(dat2017, ftrim = "2017-06-01", btrim = "2017-09-10",
+                          omit = c("chestnuthill.1", "chestnuthill.2", "chestnuthill.3",
+                                   "paradiso.1", "paradiso.2", "paradiso.3",
+                                   "milt.1", "milt.2", "milt.3",
+                                   "saul.2", "sofitel.3")) %>% # Chestnut Hill, Paradiso, and Milt are omitted because they were set up much later; Saul.2 and sofitel.3 were malfunctioning scales
+  filter(hour(TimeStamp_round) == 00:00:00) %>%
+  group_by(ScaleID) %>%
+  arrange(TimeStamp_round) %>%
+  mutate(wt_recon_norm = scale(wt_recon, center = TRUE, scale = TRUE)) %>%
+  mutate(nightly_diff = c(NA, diff(wt_recon)))
+
+dat2018_proc_gam <- data_proc_gam(dat2018, ftrim = "2018-05-01", btrim = "2018-10-10",
+                                          omit = c("paradiso.3", "rodeph.3", "westphilly.3", # paradiso.3 was a midseason deadout, rodeph.3 and westphilly.3 had interrupted readings due to battery failure
+                                                   "insectarium.1", "insectarium.2", "insectarium.3")) %>% # insectarium hives were midseason deadouts; note also that Share hives were set up with less equipment -- I think they were single deep for a while, then I think we supered with mediums; the other hives were started double deep; I think we can leave Share in though for the purposes of our analysis
+  filter(hour(TimeStamp_round) == 00:00:00) %>%
+  group_by(ScaleID) %>%
+  arrange(TimeStamp_round) %>%
+  mutate(wt_recon_norm = scale(wt_recon, center = TRUE, scale = TRUE)) %>%
+  mutate(nightly_diff = c(NA, diff(wt_recon)))
+```
+
+### Preliminary visualization
+```{r}
+ggplot(dat2017_proc_gam, aes(TimeStamp_round, wt_recon_norm, color = ScaleID)) +
+  geom_point() +
+  #stat_smooth() +
+  facet_wrap(~site)
+
+ggplot(dat2018_proc_gam, aes(TimeStamp_round, wt_recon_norm)) +
+  geom_point() +
+  #stat_smooth() +
+  facet_wrap(~site)
+```
+
+### Model G: Global smooth (I don't need random effects for site or hive because data are normalized, precluding any intercept effects of the random variables)
+```{r}
+#### 2017
+gam2017_mod1_bam <- bam(wt_recon_norm ~ s(time, k = 30, m = 2, bs = "ps"),
+                     data = dat2017_proc_gam,
+                     method = "fREML",
+                     family = "scat", # data are overdispersed
+                     discrete = TRUE) 
+plot(gam2017_mod1_bam)
+gam.check(gam2017_mod1_bam)
+summary(gam2017_mod1_bam)
+
+#### 2018
+gam2018_mod1_bam <- bam(wt_recon_norm ~ s(time, k = 30, m = 2, bs = "ps"),
+                     data = dat2018_proc_gam,
+                     method = "fREML",
+                     family = "scat", # data are overdispersed
+                     discrete = TRUE) 
+plot(gam2018_mod1_bam)
+gam.check(gam2018_mod1_bam)
+concurvity(gam2018_mod1_bam, full = TRUE)
+summary(gam2018_mod1_bam)
+```
+
+### Model GI: Global smoother + independent group level smoothers (I don't need random effects for site or hive because data are normalized, precluding any intercept effects of the random variables)
+```{r}
+#### 2017
+gam2017_mod3_bam <- bam(wt_recon_norm ~ s(time, k = 30, m = 2, bs = "ps") + 
+                     s(time, by = site, k = 30, m = 1, bs = "ps"),
+                     data = dat2017_proc_gam,
+                     method = "fREML",
+                     family = "scat", # data are overdispersed
+                     discrete = TRUE) 
+plot(gam2017_mod3_bam)
+gam.check(gam2017_mod3_bam)
+summary(gam2017_mod3_bam)
+
+#### 2018
+gam2018_mod3_bam <- bam(wt_recon_norm ~ s(time, k = 30, m = 2, bs = "ps") + 
+                     s(time, by = site, k = 30, m = 1, bs = "ps"),
+                     data = dat2018_proc_gam,
+                     method = "fREML",
+                     family = "scat", # data are overdispersed
+                     discrete = TRUE) 
+plot(gam2018_mod3_bam)
+gam.check(gam2018_mod3_bam)
+concurvity(gam2018_mod3_bam, full = TRUE)
+summary(gam2018_mod3_bam)
+```
+
+
+### Model I: Independent group level smoothers (I don't need random effects for site or hive because data are normalized, precluding any intercept effects of the random variables)
+```{r}
+#### 2017
+gam2017_mod5_bam <- bam(wt_recon_norm ~ s(time, by = site, k = 20, m = 1, bs = "ps"),
+                     data = dat2017_proc_gam,
+                     method = "fREML",
+                     family = "scat", # data are overdispersed
+                     discrete = TRUE) 
+plot(gam2017_mod5_bam)
+gam.check(gam2017_mod5_bam)
+summary(gam2017_mod5_bam)
+
+#### 2018
+gam2018_mod5_bam <- bam(wt_recon_norm ~ s(time, by = site, k = 20, m = 1, bs = "ps"),
+                     data = dat2018_proc_gam,
+                     method = "fREML",
+                     family = "scat", # data are overdispersed
+                     discrete = TRUE) 
+plot(gam2018_mod5_bam)
+gam.check(gam2018_mod5_bam)
+concurvity(gam2018_mod5_bam, full = TRUE)
+summary(gam2018_mod5_bam)
+```
+
+### Model selection
+```{r}
+AIC(gam2017_mod1_bam, gam2017_mod3_bam, gam2017_mod5_bam)
+AIC(gam2018_mod1_bam, gam2018_mod3_bam, gam2017_mod5_bam)
+
+BIC(gam2017_mod1_bam, gam2017_mod3_bam, gam2017_mod5_bam)
+BIC(gam2018_mod1_bam, gam2018_mod3_bam, gam2017_mod5_bam)
+```
+
+### Extract predicted values
+```{r}
+hives_2017 <- as.character(unique(gam2017_mod3_bam$model$ScaleID))
+time_2017 <- as.character(gam2017_mod3_bam$model$time)
+
+hives_2018 <- as.character(unique(gam2018_mod3_bam$model$ScaleID))
+time_2018 <- as.character(gam2017_mod3_bam$model$time)
+
+
+p2017 <- as_tibble(cbind(time_2017, predict(gam2017_mod3_bam, type = "terms")))
+colnames(p2017) <- c("time", hives_2017, "Hive")
+pred2017 <- p2017 %>%
+  select(-hive) %>%
+  gather(hive, pred_wt, -time) %>%
+  filter(pred_wt != 0) %>%
+  mutate(time = as.numeric(time),
+         pred_wt = as.numeric(pred_wt),
+         hive = factor(hive)) %>%
+  group_by(hive) %>%
+  mutate(pred_wt_diff = c(0, diff(pred_wt))) %>%
+  separate(hive, into = c("site", "hive_number"), sep = "\\.", remove = FALSE) %>%
+  full_join(dat2017_proc_gam, by = c("time", "site", "hive" = "ScaleID")) %>%
+  select(time, hive, site, pred_wt, wt_recon) %>%
+  mutate(wt_recon = scale(wt_recon, center = TRUE, scale = FALSE)) %>%
+  gather(metric, value, -time, -hive, -site) %>%
+  ungroup() %>%
+  mutate(hive = factor(hive),
+         site = factor(site))
+  
+
+ggplot(pred2017, aes(time, value, color = metric)) +
+  geom_point() %>%
+  facet_wrap(~hive)
+  
+
+p2018 <- as_tibble(predict(gam2018_mod3_bam, type = "terms"))
+colnames(p2018) <- c("time", sites_2018, "site", "hive")
+
+ggplot(p2018, aes())
+
+```
+
+### Graphs for workflow figure
+```{r}
+sample_raw <- filter(dat2018, Site == "mtmoriah" & TimeStamp > "2018-05-01" & TimeStamp < "2018-10-10")
+sample_proc <- data_proc_gam(dat2018, ftrim = "2018-05-01", btrim = "2018-10-10") %>%
+  filter(site == "mtmoriah")
+sample_proc_midnight <- filter(dat2018_proc_gam, site == "mtmoriah")
+
+### raw
+raw <- ggplot(sample_raw, aes(TimeStamp, Weight, color = ScaleID)) +
+  geom_line() +
+  scale_color_discrete(name="Hive", labels = c("1", "2", "3")) +
+  theme_gray(12) +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        legend.position = "none")
+#ggsave("~/hivescaler/inst/extdata/figures/raw.png")
+
+### diff
+diff <- ggplot(sample_proc, aes(TimeStamp_round, wt_diff, color = ScaleID)) +
+  geom_point(size = 0.5) +
+  scale_color_discrete(name="Hive", labels = c("1", "2", "3")) +
+  theme_gray(12) +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        legend.position = "none")
+#ggsave("~/hivescaler/inst/extdata/figures/diff.png")
+
+### clean diff
+clean <- ggplot(sample_proc, aes(TimeStamp_round, wt_diff_clean, color = ScaleID)) +
+  geom_point(size = 0.5) +
+  scale_color_discrete(name="Hive", labels = c("1", "2", "3")) +
+  theme_gray(12) +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        legend.position = "none")
+#ggsave("~/hivescaler/inst/extdata/figures/diffclean.png")
+
+### wt_recon
+recon <- ggplot(sample_proc, aes(TimeStamp_round, wt_recon, color = ScaleID)) +
+  geom_line() +
+  scale_color_discrete(name="Hive", labels = c("1", "2", "3")) +
+  theme_gray(12)  +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        legend.position = "none")
+#ggsave("~/hivescaler/inst/extdata/figures/recon.png")
+
+### midnight subsample
+daily <- ggplot(sample_proc_midnight, aes(TimeStamp_round, wt_recon, color = ScaleID)) +
+  geom_point(size = 0.5) +
+  scale_color_discrete(name="Hive", labels = c("1", "2", "3")) +
+  theme_gray(12) +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        legend.position = "none")
+#ggsave("~/hivescaler/inst/extdata/figures/daily.png")
+
+### GAM
+gam <- ggplot(sample_proc_midnight, aes(TimeStamp_round, wt_recon_norm)) +
+  geom_point(alpha = 1, size = 0.5, shape = 19, color = "goldenrod") +
+  stat_smooth(span = 0.25, color = "black") +
+  scale_color_discrete(name="Hive", labels = c("1", "2", "3")) +
+  theme_gray(12) +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        legend.position = "none")
+#ggsave("~/hivescaler/inst/extdata/figures/smooth.png")
+
+workflow <- grid.arrange(raw, diff, clean, recon, daily, gam, ncol = 3)
+ggsave("~/hivescaler/inst/extdata/figures/workflow.pdf", 
+       plot = workflow,
+       height = 4,
+       width = 8)
+```
