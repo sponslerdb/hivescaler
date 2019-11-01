@@ -11,12 +11,12 @@ data_load <- function(FilePath, tz, sep = "\\.") {
   RSQLite::dbDisconnect(data_sqlite) # closes connection
   hnames <- get_names(FilePath, sep) # call get_names function (see below) to prepare site and hive# fields to be appended to data tibble
   out <- full_join(dat, hnames, by = "UUID") %>%
-    select(Unix_Time, Site, Hive, ScaleID, RecordType, Weight) %>% # "Weight" is the raw, unscaled sum of left and right load cells
+    select(Unix_Time, Site, Hive, ScaleID, RecordType, Weight, Temperature) %>% # "Weight" is the raw, unscaled sum of left and right load cells
     as.tibble() %>%
     filter(RecordType == "Logged_Data") %>% # use only logged data readings
     mutate(TimeStamp = anytime::anytime(Unix_Time, tz = tz)) %>% # convert Unix_Time to human-readable time stamp field
     arrange(ScaleID, TimeStamp) %>% # arrange chronologically within each device
-    select(TimeStamp, Unix_Time, ScaleID, Site, Hive, Weight) %>%
+    select(TimeStamp, Unix_Time, ScaleID, Site, Hive, Weight, Temperature) %>%
     mutate(Site = as.character(Site)) # convert Site field to character so that empty factor levels do not persist after filtering
   return(out)
 }
@@ -107,7 +107,7 @@ data_proc_gam <- function(x, ftrim, btrim, omit = NULL) {
     mutate(wt_recon = cumsum(wt_diff_clean),
            wt_recon_25h = mean25h(wt_recon)) %>%
     ungroup() %>%
-    mutate(TimeStamp_round = lubridate::round_date(TimeStamp, unit = "hour"),
+    mutate(TimeStamp_round = lubridate::ceiling_date(TimeStamp, unit = "hour"),
            site = factor(Site),
            time = as.numeric(TimeStamp_round)) %>%
     select(TimeStamp_round, time, ScaleID, site, Hive, Weight, wt_diff, wt_diff_clean, wt_recon, wt_recon_25h) %>%
