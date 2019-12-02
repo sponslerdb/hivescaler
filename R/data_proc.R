@@ -53,7 +53,7 @@ mean25h <- function(x) {
 #' Empirically, histograms of my differenced show a consistent discontinuity around 2.5, suggesting that this is an appropriate value for delta_max.
 #'
 #' @param x A vector of differenced time-ordered observations
-#' @param delta_max A real number defining the weight chenge threshold above which a weight change is considered an artifact.
+#' @param delta_max A real number defining the weight change threshold above which a weight change is considered an artifact.
 #' @return A vector of de-artifacted observations
 #' @export
 deartifact <- function(x, delta_max = 2.5) {
